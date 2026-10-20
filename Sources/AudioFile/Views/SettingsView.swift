@@ -388,7 +388,7 @@ public struct SettingsView: View {
 
     private var aboutSpecifications: [AboutSpecification] {
         [
-            AboutSpecification("App Version", "1.0.0"),
+            AboutSpecification("App Version", AppUpdater.shared.currentVersion),
             AboutSpecification("Platform", "macOS 26.0+ (Liquid Glass Native)"),
             AboutSpecification("UI Framework", "Swift 6 & SwiftUI Liquid Glass (AppKit)"),
             AboutSpecification("Audio Engine", "Apple CoreAudio & AVAudioEngine"),
@@ -430,12 +430,29 @@ public struct SettingsView: View {
 
                 Spacer()
 
-                Link(destination: URL(string: "https://github.com/jonecat/audiofile")!) {
-                    Label("GitHub", systemImage: "link")
+                GlassEffectContainer(spacing: 8) {
+                    HStack(spacing: 8) {
+                        Button {
+                            vm.updater.checkForUpdates(userInitiated: true)
+                        } label: {
+                            Label(
+                                vm.updater.isCheckingForUpdates ? "Checking…" : "Check for Updates…",
+                                systemImage: "arrow.down.circle"
+                            )
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .disabled(vm.updater.isCheckingForUpdates || vm.updater.isInstallingUpdate)
+                        .help("Check GitHub Releases for a newer version of AudioFile")
+
+                        Link(destination: URL(string: "https://github.com/jonecat/audiofile")!) {
+                            Label("GitHub", systemImage: "link")
+                        }
+                        .buttonStyle(.glass)
+                        .controlSize(.small)
+                        .help("Open AudioFile repository on GitHub")
+                    }
                 }
-                .buttonStyle(.glass)
-                .controlSize(.small)
-                .help("Open AudioFile repository on GitHub")
             }
 
             // About Information Table

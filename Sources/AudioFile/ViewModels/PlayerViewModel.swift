@@ -103,6 +103,7 @@ public final class PlayerViewModel: ObservableObject {
     public let playlists = PlaylistManager.shared
     public let lyrics = LyricsManager.shared
     public let visualizer = VisualizerState.shared
+    public let updater = AppUpdater.shared
     public var config: AppConfig
 
     private var originalQueue: [Track] = []
@@ -125,6 +126,12 @@ public final class PlayerViewModel: ObservableObject {
 
         // Kick off incremental background library sync
         library.startSync(folders: config.libraryFolders, fullRescan: false)
+
+        // Check GitHub Releases for a newer version on startup
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.5))
+            AppUpdater.shared.checkForUpdates(userInitiated: false)
+        }
     }
 
     private func setupSubscriptions() {

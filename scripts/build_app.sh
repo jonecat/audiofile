@@ -6,7 +6,17 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 cd "${ROOT_DIR}"
 
-echo "Building AudioFile (release)..."
+VERSION="1.0.0"
+if [ -f "${ROOT_DIR}/VERSION" ]; then
+    VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION")"
+fi
+
+# Sync Resources/Info.plist with VERSION
+if [ -f "${ROOT_DIR}/Resources/Info.plist" ]; then
+    /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${VERSION}" "${ROOT_DIR}/Resources/Info.plist" 2>/dev/null || true
+fi
+
+echo "Building AudioFile v${VERSION} (release)..."
 swift build -c release
 
 APP_NAME="AudioFile.app"
@@ -34,4 +44,8 @@ fi
 echo "Signing application ad-hoc..."
 codesign --force --deep --sign - "${APP_DIR}"
 
-echo "Done! Application ready at: ${APP_DIR}"
+echo "Packaging release archive AudioFile.app.zip..."
+rm -f "${ROOT_DIR}/AudioFile.app.zip"
+ditto -c -k --sequesterRsrc --keepParent "${APP_DIR}" "${ROOT_DIR}/AudioFile.app.zip"
+
+echo "Done! Application ready at: ${APP_DIR} (v${VERSION})"

@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct MainSplitView: View {
     @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var updater = AppUpdater.shared
 
     public var body: some View {
         NavigationSplitView {
@@ -69,6 +70,51 @@ public struct MainSplitView: View {
         }
         .sheet(isPresented: $vm.showingSettings) {
             SettingsView(vm: vm)
+        }
+        .sheet(isPresented: $updater.isInstallingUpdate) {
+            VStack(spacing: 16) {
+                ProgressView()
+                    .controlSize(.large)
+                Text("Updating AudioFile")
+                    .font(.headline)
+                Text(updater.statusMessage)
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+            .padding(32)
+            .frame(width: 340, height: 170)
+            .interactiveDismissDisabled(true)
+        }
+        .alert(
+            "Update Available — AudioFile v\(updater.availableRelease?.version ?? "")",
+            isPresented: $updater.showingUpdatePrompt,
+            presenting: updater.availableRelease
+        ) { _ in
+            Button("Update & Restart") {
+                updater.downloadAndInstallUpdate()
+            }
+            Button("Later", role: .cancel) {}
+        } message: { release in
+            Text("AudioFile v\(release.version) is available on GitHub (you are currently running v\(updater.currentVersion)). Would you like to download and install the update now? The application will automatically restart.")
+        }
+        .alert("You're Up to Date", isPresented: $updater.showingUpToDateAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("AudioFile v\(updater.currentVersion) is currently the latest version available on GitHub.")
+        }
+        .alert(
+            "Update Error",
+            isPresented: Binding(
+                get: { updater.updateErrorMessage != nil },
+                set: { if !$0 { updater.updateErrorMessage = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) {
+                updater.updateErrorMessage = nil
+            }
+        } message: {
+            Text(updater.updateErrorMessage ?? "")
         }
         .alert(
             "Delete Playlist \"\(vm.playlistPendingDeletion?.name ?? "")\"?",

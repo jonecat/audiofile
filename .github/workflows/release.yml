@@ -1,0 +1,65 @@
+name: Release Point Version
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    if: "!startsWith(github.event.head_commit.message, 'Release v')"
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bump Point Version & Tag
+        id: version
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEXT_VERSION="1.0.0"
+          else
+            CLEAN_VER="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VER"
+            NEXT_PATCH=$((PATCH + 1))
+            NEXT_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+          fi
+
+          echo "${NEXT_VERSION}" > VERSION
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${NEXT_VERSION}" Resources/Info.plist
+          echo "version=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=v${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Build AudioFile.app (if supported by runner SDK)
+        continue-on-error: true
+        run: ./scripts/build_app.sh
+
+      - name: Commit & Push Point Release Tag
+        run: |
+          git add VERSION Resources/Info.plist
+          git commit -m "Release v${{ steps.version.outputs.version }}" || true
+          git tag -f "${{ steps.version.outputs.tag }}"
+          git push origin main --tags
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f "AudioFile.app.zip" ]; then
+            gh release create "${{ steps.version.outputs.tag }}" AudioFile.app.zip \
+              --title "AudioFile v${{ steps.version.outputs.version }}" \
+              --generate-notes
+          else
+            gh release create "${{ steps.version.outputs.tag }}" \
+              --title "AudioFile v${{ steps.version.outputs.version }}" \
+              --generate-notes
+          fi

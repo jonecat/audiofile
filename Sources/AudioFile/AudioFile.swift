@@ -25,8 +25,14 @@ struct AudioFileApp: App {
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
         .commands {
-            // App Menu -> Settings… (⌘,)
+            // App Menu -> Check for Updates… & Settings… (⌘,)
             CommandGroup(replacing: .appSettings) {
+                Button("Check for Updates…") {
+                    vm.updater.checkForUpdates(userInitiated: true)
+                }
+
+                Divider()
+
                 Button("Settings…") {
                     vm.showingSettings = true
                 }

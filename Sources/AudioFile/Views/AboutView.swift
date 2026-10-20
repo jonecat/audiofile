@@ -25,7 +25,7 @@ public struct AboutView: View {
                 Text("Native Audiophile Music Player for macOS")
                     .font(.subheadline)
                     .foregroundColor(.secondary)
-                Text("Version 1.0.0")
+                Text("Version \(AppUpdater.shared.currentVersion)")
                     .font(.system(size: 11, design: .monospaced))
                     .foregroundColor(.secondary.opacity(0.8))
             }

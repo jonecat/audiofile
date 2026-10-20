@@ -49,7 +49,8 @@
   - Instant startup loading from cached `~/Library/Application Support/AudioFile/library.json` with automatic metadata backfill for track/disc numbers.
   - Non-destructive incremental background scanner using file size and modification timestamp (`stat`) caching.
   - Unmounted network drive protection: prevents wiping cached tracks if a remote NAS or external drive is offline.
-- **Full macOS System Integration**:
+- **Full macOS System Integration & Automatic GitHub Self-Updater**:
+  - **Automatic Point-Release Self-Updater (`AppUpdater`)**: Checks GitHub Releases (`jonecat/audiofile`) on launch and via **AudioFile → Check for Updates…**, prompts when a newer point release (`1.0.1`, `1.0.2`, etc.) is available, downloads `AudioFile.app.zip`, replaces the installed app bundle in-place, and automatically reboots `AudioFile`.
   - **Menu Bar**: Native **AudioFile**, **Controls**, and **View** menus with standard keyboard shortcuts.
   - **Media Keys & Control Center**: Full integration with `MPNowPlayingInfoCenter` and `MPRemoteCommandCenter` (track title, artist, album, artwork, and playback progress appear in macOS Control Center and Lock Screen).
   - **Drag and Drop**: Drag audio files or folders directly into the window to play immediately or add to your library.
@@ -111,22 +112,34 @@ open AudioFile.app
 
 You can drag `AudioFile.app` directly into your `/Applications` folder.
 
+### Publish a New Point Release to GitHub (`1.0.0` → `1.0.1` → `1.0.2`)
+```bash
+# Automatically increments the patch version in VERSION & Info.plist,
+# builds AudioFile.app & AudioFile.app.zip, commits, tags (v1.0.x), pushes to main,
+# and publishes the GitHub Release with the compiled AudioFile.app.zip binary attached:
+./scripts/release.sh
+```
+
 ---
 
 ## 🏗️ Architecture
 
 ```text
 audiofile/
+├── VERSION                                 # Current semantic version (auto-incremented on release)
 ├── Package.swift                           # Swift Package Manager configuration (.macOS(.v26), Swift 6)
 ├── Resources/
 │   ├── Info.plist                          # macOS bundle configuration & audio file associations
 │   ├── AppIcon.icns                        # High-resolution Retina application icon (16x16 to 1024x1024)
 │   └── AppIcon_1024.png
 ├── scripts/
-│   └── build_app.sh                        # Release compilation and ad-hoc signed .app bundle packager
+│   ├── build_app.sh                        # Release compilation, bundle packager & AudioFile.app.zip creator
+│   └── release.sh                          # Automatic point-release bumper, tagger & GitHub Release publisher
 └── Sources/
     └── AudioFile/
-        ├── AudioFile.swift                 # @main SwiftUI App entry point, Settings (⌘,) & menu commands
+        ├── AudioFile.swift                 # @main SwiftUI App entry point, Check for Updates, Settings (⌘,) & menus
+        ├── Updater/
+        │   └── AppUpdater.swift            # GitHub Releases version checker, self-updater & auto-relauncher
         ├── Models/
         │   ├── Track.swift                 # Audio track metadata model, format descriptors & quality info
         │   ├── Playlist.swift              # Playlist and PlaylistsData models
