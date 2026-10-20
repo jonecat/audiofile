@@ -148,7 +148,8 @@ public final class AppUpdater: ObservableObject {
         guard let htmlURL = URL(string: decoded.html_url) else { return nil }
 
         // Prefer AudioFile.app.zip (or any .zip asset), falling back to the raw AudioFile binary asset
-        let chosenAsset = decoded.assets.first(where: { $0.name.lowercased().hasSuffix(".zip") })
+        let chosenAsset = decoded.assets.first(where: { $0.name.lowercased() == "audiofile.app.zip" })
+            ?? decoded.assets.first(where: { $0.name.lowercased().hasSuffix(".zip") })
             ?? decoded.assets.first(where: { $0.name == "AudioFile" })
             ?? decoded.assets.first
 

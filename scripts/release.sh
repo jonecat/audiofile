@@ -55,7 +55,8 @@ git tag -f "v${NEXT_VERSION}"
 
 # Push branch and tag to GitHub
 echo "Pushing main and tag v${NEXT_VERSION} to GitHub..."
-SKIP_AUTO_RELEASE=1 git push -u origin main --tags --force-with-lease
+SKIP_AUTO_RELEASE=1 git push -u origin main
+SKIP_AUTO_RELEASE=1 git push origin "refs/tags/v${NEXT_VERSION}" --force
 
 # Create or update GitHub Release with pre-compiled AudioFile.dmg and AudioFile.app.zip binaries
 echo "Publishing GitHub Release v${NEXT_VERSION} with pre-compiled binaries (AudioFile.dmg & AudioFile.app.zip)..."
