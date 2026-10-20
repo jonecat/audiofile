@@ -1,0 +1,105 @@
+import SwiftUI
+
+public struct SongsView: View {
+    @ObservedObject var vm: PlayerViewModel
+
+    public var body: some View {
+        Table(vm.sortedTracks, selection: $vm.selectedTrackId, sortOrder: $vm.sortOrder) {
+            TableColumn("") { track in
+                let isPlaying = (vm.audio.currentTrack?.id == track.id)
+                let isSelected = (vm.selectedTrackId == track.id)
+
+                HStack(spacing: 6) {
+                    if isPlaying && vm.audio.state == .playing {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .foregroundStyle(isSelected ? Color.white : Color.accentColor)
+                            .font(.system(size: 11))
+                    }
+
+                    Button {
+                        vm.toggleFavorite(track: track)
+                    } label: {
+                        Image(systemName: vm.playlists.isFavorite(trackId: track.id) ? "star.fill" : "star")
+                            .foregroundStyle(
+                                isSelected
+                                    ? Color.white
+                                    : (vm.playlists.isFavorite(trackId: track.id) ? Color.accentColor : Color.secondary.opacity(0.4))
+                            )
+                            .font(.system(size: 11))
+                    }
+                    .buttonStyle(.plain)
+                    .help(vm.playlists.isFavorite(trackId: track.id) ? "Remove from Favorites" : "Add to Favorites")
+                }
+                .frame(width: 38)
+            }
+            .width(42)
+
+            TableColumn("Title", value: \.displayTitle) { track in
+                let isPlaying = (vm.audio.currentTrack?.id == track.id)
+                let isSelected = (vm.selectedTrackId == track.id)
+
+                Text(track.displayTitle)
+                    .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                    .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+            }
+            .width(min: 160, ideal: 240)
+
+            TableColumn("Artist", value: \.displayArtist) { track in
+                Text(track.displayArtist)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            .width(min: 120, ideal: 180)
+
+            TableColumn("Album", value: \.displayAlbum) { track in
+                Text(track.displayAlbum)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+            }
+            .width(min: 120, ideal: 180)
+
+            TableColumn("Duration", value: \.duration) { track in
+                Text(track.formattedDuration)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+            .width(64)
+
+            TableColumn("Format", value: \.format) { track in
+                let isSelected = (vm.selectedTrackId == track.id)
+                FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)
+            }
+            .width(60)
+
+            TableColumn("Quality") { track in
+                if let depth = track.bitDepth, depth > 0, let rate = track.sampleRate {
+                    Text("\(depth)-bit • \(String(format: "%.1f", rate / 1000.0)) kHz")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                } else if let br = track.bitrate {
+                    Text("\(br) kbps")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+            }
+            .width(110)
+
+            TableColumn("") { track in
+                let isSelected = (vm.selectedTrackId == track.id)
+                TrackKebabMenuButton(vm: vm, track: track, trackList: vm.sortedTracks, isHighlighted: isSelected)
+            }
+            .width(32)
+        }
+        .contextMenu(forSelectionType: String.self) { selection in
+            if let trackId = selection.first,
+               let track = vm.library.tracks.first(where: { $0.id == trackId }) {
+                TrackMenuItems(vm: vm, track: track, trackList: vm.sortedTracks)
+            }
+        } primaryAction: { selection in
+            if let trackId = selection.first,
+               let track = vm.library.tracks.first(where: { $0.id == trackId }) {
+                vm.playTrack(track, in: vm.sortedTracks)
+            }
+        }
+    }
+}

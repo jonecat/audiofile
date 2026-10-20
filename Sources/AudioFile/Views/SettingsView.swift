@@ -1,0 +1,486 @@
+import SwiftUI
+import AppKit
+
+public struct SettingsView: View {
+    @ObservedObject var vm: PlayerViewModel
+    @Environment(\.dismiss) private var dismiss
+    @Namespace private var tabNamespace
+
+    public init(vm: PlayerViewModel) {
+        self.vm = vm
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            // Header with Liquid Glass Tab Bar & Close Button
+            HStack {
+                GlassEffectContainer(spacing: 4) {
+                    HStack(spacing: 4) {
+                        ForEach(SettingsTab.allCases) { tab in
+                            tabButton(for: tab)
+                        }
+                    }
+                    .padding(4)
+                    .glassEffect(.clear, in: .capsule)
+                }
+
+                Spacer()
+
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .frame(width: 24, height: 24)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .help("Close Settings")
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 12)
+
+            Divider()
+
+            // Tab Content
+            Group {
+                switch vm.selectedSettingsTab {
+                case .library:
+                    libraryTab
+                case .audio:
+                    audioTab
+                case .visualizer:
+                    visualizerTab
+                case .lyrics:
+                    lyricsTab
+                case .about:
+                    aboutTab
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .padding(24)
+        }
+        .frame(width: 620, height: 490)
+        .alert("Lyrics Cache Cleared", isPresented: $vm.showingCacheClearedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("All cached .lrc lyrics and negative cache markers have been removed.")
+        }
+    }
+
+    private func tabButton(for tab: SettingsTab) -> some View {
+        let isSelected = (vm.selectedSettingsTab == tab)
+        return Button {
+            withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+                vm.selectedSettingsTab = tab
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: tab.icon)
+                    .font(.system(size: 11))
+                Text(tab.rawValue)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+            }
+            .foregroundStyle(isSelected ? Color.white : Color.secondary)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .contentShape(.capsule)
+            .glassEffect(isSelected ? .regular.tint(Color.accentColor).interactive() : .identity, in: .capsule)
+            .glassEffectID(isSelected ? "activeSettingsTab" : tab.id, in: tabNamespace)
+        }
+        .buttonStyle(.plain)
+        .contentShape(.capsule)
+        .help("\(tab.rawValue) settings")
+    }
+
+    // MARK: - Tab 1: Library
+
+    private var libraryTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Library Folders")
+                    .font(.title3.weight(.bold))
+                Text("AudioFile scans these directories recursively for lossless and high-resolution audio files.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Configured Directories", systemImage: "folder")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        chooseFolder()
+                    } label: {
+                        Label("Add Folder…", systemImage: "plus")
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .help("Choose a music folder to add to your library")
+                }
+
+                ScrollView {
+                    VStack(spacing: 0) {
+                        if vm.config.libraryFolders.isEmpty {
+                            Text("No folders configured. Click Add Folder to include your music.")
+                                .font(.system(size: 13))
+                                .foregroundColor(.secondary)
+                                .frame(maxWidth: .infinity)
+                                .padding(24)
+                        } else {
+                            ForEach(vm.config.libraryFolders, id: \.self) { folder in
+                                HStack {
+                                    Image(systemName: "folder.fill")
+                                        .foregroundColor(.accentColor)
+                                    Text(folder.path)
+                                        .font(.system(size: 12, design: .monospaced))
+                                        .lineLimit(1)
+                                    Spacer()
+                                    Button {
+                                        removeFolder(folder)
+                                    } label: {
+                                        Image(systemName: "trash")
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Remove folder from library")
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 8)
+                                Divider()
+                            }
+                        }
+                    }
+                }
+                .frame(maxHeight: 140)
+                .glassEffect(.clear, in: .rect(cornerRadius: 12))
+            }
+
+            // Sync Controls
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Library Synchronization")
+                    .font(.headline)
+
+                GlassEffectContainer(spacing: 10) {
+                    HStack(spacing: 12) {
+                        Button {
+                            vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
+                        } label: {
+                            if vm.library.isSyncing {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Syncing…")
+                            } else {
+                                Label("Sync Library (Incremental)", systemImage: "arrow.triangle.2.circlepath")
+                            }
+                        }
+                        .buttonStyle(.glassProminent)
+                        .disabled(vm.library.isSyncing)
+                        .help("Scan library folders for new or modified audio files")
+
+                        Button {
+                            vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: true)
+                        } label: {
+                            Label("Full Metadata Rescan", systemImage: "arrow.clockwise")
+                        }
+                        .buttonStyle(.glass)
+                        .disabled(vm.library.isSyncing)
+                        .help("Re-read metadata tags for all audio files in your library")
+
+                        if !vm.library.syncStatusText.isEmpty {
+                            Text(vm.library.syncStatusText)
+                                .font(.system(size: 12))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab 2: Audio
+
+    private var audioTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Audiophile Audio Engine")
+                    .font(.title3.weight(.bold))
+                Text("Native Apple CoreAudio and AVAudioEngine playback pipeline with gapless pre-buffering.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Engine Specifications")
+                    .font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                    GridRow {
+                        Text("Playback Backend:").foregroundColor(.secondary)
+                        Text("Apple CoreAudio & AVAudioEngine (macOS Native)")
+                    }
+                    GridRow {
+                        Text("Supported Formats:").foregroundColor(.secondary)
+                        Text("FLAC, ALAC (Apple Lossless), WAV, AIFF, M4A/AAC, MP3")
+                    }
+                    GridRow {
+                        Text("Bit Depths:").foregroundColor(.secondary)
+                        Text("16-bit, 24-bit, 32-bit Float")
+                    }
+                    GridRow {
+                        Text("Sample Rates:").foregroundColor(.secondary)
+                        Text("44.1 kHz, 48.0 kHz, 88.2 kHz, 96.0 kHz, 176.4 kHz, 192.0 kHz")
+                    }
+                    GridRow {
+                        Text("Gapless Preload:").foregroundColor(.secondary)
+                        Text("Double-buffered boundary sample alignment")
+                    }
+                    GridRow {
+                        Text("Output Matching:").foregroundColor(.secondary)
+                        Text("Direct pitch match with native DAC sample rate conversion")
+                    }
+                }
+                .font(.system(size: 12, design: .monospaced))
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab 3: Visualizer
+
+    private var visualizerTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Spectrum Visualizer")
+                    .font(.title3.weight(.bold))
+                Text("Real-time 64-band Fast Fourier Transform (FFT) frequency spectrum analyzer.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Target Frame Rate")
+                    .font(.headline)
+
+                Picker("", selection: Binding(
+                    get: { vm.config.visualizerFPS },
+                    set: { vm.setVisualizerFPS($0) }
+                )) {
+                    Text("30 FPS (Energy Saver)").tag(30)
+                    Text("60 FPS (Default Smooth)").tag(60)
+                    Text("120 FPS (ProMotion Ultra)").tag(120)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .frame(maxWidth: 420, alignment: .leading)
+                .help("Select target frame rate for the spectrum analyzer")
+
+                Text("Controls the FFT calculation and redraw frequency. 120 FPS provides maximum fluid motion on Apple ProMotion displays.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("DSP Characteristics")
+                    .font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    GridRow {
+                        Text("DSP Framework:").foregroundColor(.secondary)
+                        Text("Apple Accelerate (vDSP FFT)")
+                    }
+                    GridRow {
+                        Text("Frequency Range:").foregroundColor(.secondary)
+                        Text("20 Hz — 20,000 Hz (Logarithmic binning)")
+                    }
+                    GridRow {
+                        Text("Window Function:").foregroundColor(.secondary)
+                        Text("Hann Window with spectral leakage suppression")
+                    }
+                    GridRow {
+                        Text("Ballistics:").foregroundColor(.secondary)
+                        Text("Dynamic attack & exponential decay with peak-hold caps")
+                    }
+                }
+                .font(.system(size: 12, design: .monospaced))
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .glassEffect(.regular, in: .rect(cornerRadius: 12))
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab 4: Lyrics
+
+    private var lyricsTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Lyrics Engine")
+                    .font(.title3.weight(.bold))
+                Text("Synchronized LRC lyric retrieval and real-time playback tracking.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle("Show Synchronized 5-Line Lyrics by Default", isOn: $vm.showLyrics)
+                    .font(.system(size: 13))
+
+                Toggle("Automatically Fetch Lyrics from LRCLIB", isOn: Binding(
+                    get: { vm.config.autoFetchLyrics },
+                    set: {
+                        vm.config.autoFetchLyrics = $0
+                        vm.config.save()
+                    }
+                ))
+                .font(.system(size: 13))
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Lyrics Cache")
+                    .font(.headline)
+
+                HStack(spacing: 12) {
+                    Button("Clear Lyrics Disk Cache") {
+                        Task {
+                            await LRCLIBClient.shared.clearCache()
+                            await MainActor.run {
+                                vm.showingCacheClearedAlert = true
+                            }
+                        }
+                    }
+                    .buttonStyle(.glass)
+                    .help("Delete all locally cached .lrc lyrics files")
+
+                    Text("Stored locally in ~/Library/Caches/AudioFile/lyrics/")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab 5: About (Table Representation)
+
+    private struct AboutSpecification: Identifiable {
+        let id: String
+        let property: String
+        let value: String
+
+        init(_ property: String, _ value: String) {
+            self.id = property
+            self.property = property
+            self.value = value
+        }
+    }
+
+    private var aboutSpecifications: [AboutSpecification] {
+        [
+            AboutSpecification("App Version", "1.0.0"),
+            AboutSpecification("Platform", "macOS 26.0+ (Liquid Glass Native)"),
+            AboutSpecification("UI Framework", "Swift 6 & SwiftUI Liquid Glass (AppKit)"),
+            AboutSpecification("Audio Engine", "Apple CoreAudio & AVAudioEngine"),
+            AboutSpecification("FFT Visualizer", "Apple Accelerate (vDSP 64-Band Real-Time)"),
+            AboutSpecification("Lyrics Provider", "LRCLIB API (Synchronized 5-Line LRC)"),
+            AboutSpecification("Waveform Engine", "Asynchronous RMS downsampling & dynamics cache"),
+            AboutSpecification("Playback Pipeline", "Lossless gapless boundary preloading"),
+            AboutSpecification("Audio Codecs", "FLAC, ALAC, WAV, AIFF, M4A/AAC, MP3"),
+            AboutSpecification("Author", "Jon Lawrence"),
+            AboutSpecification("Repository", "https://github.com/jonecat/audiofile"),
+            AboutSpecification("License", "MIT License")
+        ]
+    }
+
+    private var aboutTab: some View {
+        VStack(spacing: 16) {
+            // Header
+            HStack(spacing: 16) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(
+                            colors: [Color.accentColor, Color.accentColor.opacity(0.6)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 48, height: 48)
+                    Image(systemName: "waveform")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AudioFile")
+                        .font(.title2.weight(.bold))
+                    Text("Native Audiophile Music Player for macOS")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Link(destination: URL(string: "https://github.com/jonecat/audiofile")!) {
+                    Label("GitHub", systemImage: "link")
+                }
+                .buttonStyle(.glass)
+                .controlSize(.small)
+                .help("Open AudioFile repository on GitHub")
+            }
+
+            // About Information Table
+            Table(aboutSpecifications) {
+                TableColumn("Component") { item in
+                    Text(item.property)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.secondary)
+                }
+                .width(min: 130, ideal: 150, max: 170)
+
+                TableColumn("Specification") { item in
+                    Text(item.value)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(.primary)
+                }
+            }
+            .frame(maxHeight: .infinity)
+            .clipShape(.rect(cornerRadius: 12))
+            .glassEffect(.clear, in: .rect(cornerRadius: 12))
+        }
+    }
+
+    // MARK: - Folder Helpers
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.message = "Choose a music folder to add to your AudioFile library"
+        panel.prompt = "Add Folder"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            if !vm.config.libraryFolders.contains(url) {
+                vm.config.libraryFolders.append(url)
+                vm.config.save()
+                vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
+            }
+        }
+    }
+
+    private func removeFolder(_ folder: URL) {
+        vm.config.libraryFolders.removeAll { $0 == folder }
+        vm.config.save()
+        vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
+    }
+}
