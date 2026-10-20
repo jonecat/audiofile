@@ -113,7 +113,6 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
 
     public var qualityDescription: String {
         var parts: [String] = []
-        parts.append(format.uppercased())
 
         if let depth = bitDepth, depth > 0 {
             parts.append("\(depth)-bit")
