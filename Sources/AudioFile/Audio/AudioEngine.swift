@@ -44,6 +44,7 @@ public final class AudioEngine: ObservableObject {
     private var preloadedFile: AVAudioFile?
 
     public var onTrackCompleted: (@MainActor () -> Void)?
+    public var onPreviousTrackRequested: (@MainActor () -> Void)?
 
     public init() {
         setupAudioEngine()
@@ -112,7 +113,7 @@ public final class AudioEngine: ObservableObject {
         commandCenter.nextTrackCommand.addTarget(handler: Self.makeRemoteCommandHandler(engine: self) { $0.onTrackCompleted?() })
 
         commandCenter.previousTrackCommand.isEnabled = true
-        // Will be configured by PlayerViewModel
+        commandCenter.previousTrackCommand.addTarget(handler: Self.makeRemoteCommandHandler(engine: self) { $0.onPreviousTrackRequested?() })
 
         commandCenter.changePlaybackPositionCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.addTarget(handler: Self.makePlaybackPositionHandler(engine: self))

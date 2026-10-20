@@ -2,13 +2,67 @@ import SwiftUI
 import AppKit
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private var keyEventMonitor: Any?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSApp.activate(ignoringOtherApps: true)
+        installGlobalKeyMonitor()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         true
+    }
+
+    private func installGlobalKeyMonitor() {
+        keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let keyCode = event.keyCode
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                .subtracting([.numericPad, .function])
+
+            let handled = MainActor.assumeIsolated { () -> Bool in
+                // Allow normal typing and cursor navigation when a text field / search field is focused
+                if let responder = NSApp.keyWindow?.firstResponder, responder is NSTextView {
+                    return false
+                }
+
+                switch keyCode {
+                case 124: // Right Arrow
+                    if flags.isEmpty || flags == .command {
+                        PlayerViewModel.shared.nextTrack()
+                        return true
+                    } else if flags == .shift {
+                        PlayerViewModel.shared.audio.seekRelative(by: 5)
+                        return true
+                    } else if flags == [.command, .option] {
+                        PlayerViewModel.shared.audio.seekRelative(by: 30)
+                        return true
+                    }
+                case 123: // Left Arrow
+                    if flags.isEmpty || flags == .command {
+                        PlayerViewModel.shared.previousTrack()
+                        return true
+                    } else if flags == .shift {
+                        PlayerViewModel.shared.audio.seekRelative(by: -5)
+                        return true
+                    } else if flags == [.command, .option] {
+                        PlayerViewModel.shared.audio.seekRelative(by: -30)
+                        return true
+                    }
+                case 49: // Spacebar
+                    if flags.isEmpty {
+                        PlayerViewModel.shared.audio.togglePlayPause()
+                        return true
+                    }
+                default:
+                    break
+                }
+
+                return false
+            }
+
+            return handled ? nil : event
+        }
     }
 }
 
@@ -49,12 +103,12 @@ struct AudioFileApp: App {
                 Button("Next Track") {
                     vm.nextTrack()
                 }
-                .keyboardShortcut(.rightArrow, modifiers: .command)
+                .keyboardShortcut(.rightArrow, modifiers: [])
 
                 Button("Previous Track") {
                     vm.previousTrack()
                 }
-                .keyboardShortcut(.leftArrow, modifiers: .command)
+                .keyboardShortcut(.leftArrow, modifiers: [])
 
                 Divider()
 

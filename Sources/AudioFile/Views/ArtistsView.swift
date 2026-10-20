@@ -101,6 +101,9 @@ public struct ArtistsView: View {
                         .tag(album)
                     }
                     .listStyle(.plain)
+                    .onChange(of: vm.selectedAlbum) { _, _ in
+                        vm.syncQueueWithDisplayedTracks(displayedSongs(for: artist))
+                    }
                 } else {
                     ContentUnavailableView(
                         "No Artist Selected",

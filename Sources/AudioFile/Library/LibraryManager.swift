@@ -46,8 +46,9 @@ public final class LibraryManager: ObservableObject {
             if artistA != artistB {
                 return Self.compareArtists(artistA, artistB)
             }
-            if a.album != b.album {
-                return a.album.localizedCaseInsensitiveCompare(b.album) == .orderedAscending
+            let albumCmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
+            if albumCmp != .orderedSame {
+                return albumCmp == .orderedAscending
             }
             if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
                 return (a.discNumber ?? 1) < (b.discNumber ?? 1)
@@ -259,8 +260,9 @@ public final class LibraryManager: ObservableObject {
             return matchArtist
         }
         return filtered.sorted { a, b in
-            if a.displayAlbum != b.displayAlbum {
-                return a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum) == .orderedAscending
+            let albumCmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
+            if albumCmp != .orderedSame {
+                return albumCmp == .orderedAscending
             }
             if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
                 return (a.discNumber ?? 1) < (b.discNumber ?? 1)

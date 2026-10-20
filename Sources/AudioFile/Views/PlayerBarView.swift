@@ -110,7 +110,7 @@ public struct PlayerBarView: View {
                         .buttonStyle(.plain)
                         .contentShape(.circle)
                         .keyboardShortcut("[", modifiers: .command)
-                        .help("Previous track (⌘← / ⌘[)")
+                        .help("Previous track (← / ⌘[)")
 
                         // Play / Pause
                         Button {
@@ -143,7 +143,7 @@ public struct PlayerBarView: View {
                         .buttonStyle(.plain)
                         .contentShape(.circle)
                         .keyboardShortcut("]", modifiers: .command)
-                        .help("Next track (⌘→ / ⌘])")
+                        .help("Next track (→ / ⌘])")
 
                         // Repeat Mode
                         Button {

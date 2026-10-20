@@ -89,7 +89,7 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var selectedAlbumDetail: LibraryManager.AlbumInfo?
     @Published public var selectedTrackId: String?
     @Published public var sortOrder: [KeyPathComparator<Track>] = [
-        .init(\.artist, order: .forward)
+        .init(\.displayArtist, order: .forward)
     ]
     @Published public var showingCacheClearedAlert: Bool = false
 
@@ -112,7 +112,9 @@ public final class PlayerViewModel: ObservableObject {
     public init() {
         self.config = AppConfig.load()
         self.repeatMode = config.repeatMode
-        self.shuffle = config.shuffle
+        self.shuffle = false
+        self.config.shuffle = false
+        self.config.save()
         self.showLyrics = config.showLyrics
         self.showVisualizer = config.showVisualizer
         self.lyricsScale = config.lyricsScale
@@ -138,6 +140,9 @@ public final class PlayerViewModel: ObservableObject {
         // Forward audio track completion to nextTrack()
         audio.onTrackCompleted = { [weak self] in
             self?.handleTrackEnded()
+        }
+        audio.onPreviousTrackRequested = { [weak self] in
+            self?.previousTrack()
         }
 
         // Library track changes -> update filtered/sorted tracks
@@ -217,7 +222,6 @@ public final class PlayerViewModel: ObservableObject {
         guard !allTracks.isEmpty else { return }
 
         isLibraryShuffleActive = true
-        shuffle = true
         if repeatMode == .off {
             repeatMode = .all
         }
@@ -227,6 +231,7 @@ public final class PlayerViewModel: ObservableObject {
         originalQueue = allTracks
         queue = shuffled
         currentQueueIndex = 0
+        selectedTrackId = shuffled[0].id
 
         audio.play(track: shuffled[0])
         preloadUpcoming()
@@ -234,11 +239,28 @@ public final class PlayerViewModel: ObservableObject {
 
     public func stopLibraryShuffle() {
         isLibraryShuffleActive = false
+        shuffle = false
         audio.stop()
     }
 
+    public func syncQueueWithDisplayedTracks(_ trackList: [Track]) {
+        guard !shuffle && !isLibraryShuffleActive,
+              let currentId = audio.currentTrack?.id,
+              let idx = trackList.firstIndex(where: { $0.id == currentId }) else {
+            return
+        }
+        originalQueue = trackList
+        queue = trackList
+        currentQueueIndex = idx
+        preloadUpcoming()
+    }
+
     public func playTrack(_ track: Track, in trackList: [Track] = []) {
-        isLibraryShuffleActive = false
+        if isLibraryShuffleActive {
+            isLibraryShuffleActive = false
+            shuffle = false
+        }
+        selectedTrackId = track.id
         if trackList.isEmpty {
             originalQueue = [track]
             queue = [track]
@@ -268,6 +290,16 @@ public final class PlayerViewModel: ObservableObject {
             return
         }
 
+        if !shuffle && !isLibraryShuffleActive {
+            if !originalQueue.isEmpty {
+                queue = originalQueue
+            }
+            if let currentId = audio.currentTrack?.id,
+               let actualIndex = queue.firstIndex(where: { $0.id == currentId }) {
+                currentQueueIndex = actualIndex
+            }
+        }
+
         if isLibraryShuffleActive && currentQueueIndex + 1 >= queue.count {
             appendReshuffledLibraryPass()
         }
@@ -275,11 +307,15 @@ public final class PlayerViewModel: ObservableObject {
         let nextIndex = currentQueueIndex + 1
         if nextIndex < queue.count {
             currentQueueIndex = nextIndex
-            audio.play(track: queue[nextIndex])
+            let next = queue[nextIndex]
+            selectedTrackId = next.id
+            audio.play(track: next)
             preloadUpcoming()
         } else if repeatMode == .all {
             currentQueueIndex = 0
-            audio.play(track: queue[0])
+            let first = queue[0]
+            selectedTrackId = first.id
+            audio.play(track: first)
             preloadUpcoming()
         } else {
             isLibraryShuffleActive = false
@@ -296,14 +332,28 @@ public final class PlayerViewModel: ObservableObject {
             return
         }
 
+        if !shuffle && !isLibraryShuffleActive {
+            if !originalQueue.isEmpty {
+                queue = originalQueue
+            }
+            if let currentId = audio.currentTrack?.id,
+               let actualIndex = queue.firstIndex(where: { $0.id == currentId }) {
+                currentQueueIndex = actualIndex
+            }
+        }
+
         let prevIndex = currentQueueIndex - 1
         if prevIndex >= 0 {
             currentQueueIndex = prevIndex
-            audio.play(track: queue[prevIndex])
+            let prev = queue[prevIndex]
+            selectedTrackId = prev.id
+            audio.play(track: prev)
             preloadUpcoming()
         } else if repeatMode == .all || isLibraryShuffleActive {
             currentQueueIndex = queue.count - 1
-            audio.play(track: queue[currentQueueIndex])
+            let last = queue[currentQueueIndex]
+            selectedTrackId = last.id
+            audio.play(track: last)
             preloadUpcoming()
         } else {
             audio.seek(to: 0)
