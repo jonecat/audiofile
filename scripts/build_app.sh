@@ -42,6 +42,7 @@ if [ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]; then
 fi
 
 echo "Signing application ad-hoc..."
+xattr -cr "${APP_DIR}"
 codesign --force --deep --sign - "${APP_DIR}"
 
 echo "Packaging release archive AudioFile.app.zip..."

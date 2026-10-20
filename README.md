@@ -6,15 +6,21 @@
 
 `AudioFile` is a native macOS audio player designed for audiophiles who demand bit-perfect lossless playback, high-resolution metadata, real-time 64-band FFT spectrum visualization, 5-line synchronized lyrics, and deep Apple ecosystem integration. Built with Apple's native **Liquid Glass** design system (`Glass`, `.glassEffect`, `GlassEffectContainer`, and `.glassEffectID`), every accented element dynamically adapts to your macOS **System Settings → Appearance** accent color.
 
-## ⬇️ Download Pre-Built macOS App (No Compilation Required)
+## ⬇️ Download & Install Pre-Built macOS App (No Compilation Required)
 
-Download the latest ready-to-run macOS application directly from GitHub Releases:
+### Recommended: 1-Line Terminal Install (Bypasses macOS Gatekeeper Warning)
+Run this in Terminal to download the latest pre-built `AudioFile.app` from GitHub Releases, install it into `/Applications`, and launch it immediately without any Gatekeeper prompt:
 
+```bash
+curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/install.sh | bash
+```
+
+### Direct Browser Downloads
 - **[Download `AudioFile.dmg` (macOS Disk Image Installer)](https://github.com/jonecat/audiofile/releases/latest/download/AudioFile.dmg)**
 - **[Download `AudioFile.app.zip` (Standalone App Bundle)](https://github.com/jonecat/audiofile/releases/latest/download/AudioFile.app.zip)**
 - **[View All Releases on GitHub](https://github.com/jonecat/audiofile/releases/latest)**
 
-> **Note**: Once installed, `AudioFile` automatically checks GitHub Releases for new point updates (`1.0.1`, `1.0.2`, …) and can update and restart itself in-place.
+*(If downloading via a web browser, run `xattr -cr /Applications/AudioFile.app` once after moving to `/Applications` to clear browser quarantine. All future updates installed via the built-in updater bypass Gatekeeper automatically.)*
 
 ---
 
