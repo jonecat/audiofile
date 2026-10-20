@@ -48,4 +48,14 @@ echo "Packaging release archive AudioFile.app.zip..."
 rm -f "${ROOT_DIR}/AudioFile.app.zip"
 ditto -c -k --sequesterRsrc --keepParent "${APP_DIR}" "${ROOT_DIR}/AudioFile.app.zip"
 
-echo "Done! Application ready at: ${APP_DIR} (v${VERSION})"
+echo "Packaging disk image AudioFile.dmg..."
+rm -f "${ROOT_DIR}/AudioFile.dmg"
+DMG_STAGING="${ROOT_DIR}/.build/dmg_staging"
+rm -rf "${DMG_STAGING}"
+mkdir -p "${DMG_STAGING}"
+cp -R "${APP_DIR}" "${DMG_STAGING}/AudioFile.app"
+ln -s /Applications "${DMG_STAGING}/Applications"
+hdiutil create -volname "AudioFile" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${ROOT_DIR}/AudioFile.dmg" >/dev/null
+rm -rf "${DMG_STAGING}"
+
+echo "Done! Application ready at: ${APP_DIR}, AudioFile.app.zip, and AudioFile.dmg (v${VERSION})"

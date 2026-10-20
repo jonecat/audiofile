@@ -11,10 +11,10 @@ if [ -f "${ROOT_DIR}/VERSION" ]; then
     CURRENT_VERSION="$(tr -d '[:space:]' < "${ROOT_DIR}/VERSION")"
 fi
 
-# Check if the current version tag already exists in git or on GitHub
+# Check if the current version tag already exists on GitHub Releases
 if [ "${1}" == "--initial" ]; then
     NEXT_VERSION="${CURRENT_VERSION}"
-elif git rev-parse "v${CURRENT_VERSION}" >/dev/null 2>&1 || gh release view "v${CURRENT_VERSION}" >/dev/null 2>&1; then
+elif gh release view "v${CURRENT_VERSION}" >/dev/null 2>&1; then
     IFS='.' read -r MAJOR MINOR PATCH <<< "${CURRENT_VERSION}"
     MAJOR=${MAJOR:-1}
     MINOR=${MINOR:-0}
@@ -40,7 +40,7 @@ if [ -f "${ROOT_DIR}/Resources/Info.plist" ]; then
     /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEXT_BUILD}" "${ROOT_DIR}/Resources/Info.plist"
 fi
 
-# Build AudioFile.app and AudioFile.app.zip with updated version
+# Build AudioFile.app, AudioFile.app.zip, and AudioFile.dmg with updated version
 "${SCRIPT_DIR}/build_app.sh"
 
 # Stage and commit any changes if working tree has modifications
@@ -55,14 +55,16 @@ git tag -f "v${NEXT_VERSION}"
 
 # Push branch and tag to GitHub
 echo "Pushing main and tag v${NEXT_VERSION} to GitHub..."
-SKIP_AUTO_RELEASE=1 git push -u origin main --tags
+SKIP_AUTO_RELEASE=1 git push -u origin main --tags --force-with-lease
 
-# Create or update GitHub Release with AudioFile.app.zip binary archive
-echo "Publishing GitHub Release v${NEXT_VERSION} with AudioFile.app.zip..."
+# Create or update GitHub Release with pre-compiled AudioFile.dmg and AudioFile.app.zip binaries
+echo "Publishing GitHub Release v${NEXT_VERSION} with pre-compiled binaries (AudioFile.dmg & AudioFile.app.zip)..."
 if gh release view "v${NEXT_VERSION}" >/dev/null 2>&1; then
-    gh release upload "v${NEXT_VERSION}" "${ROOT_DIR}/AudioFile.app.zip" --clobber
+    gh release upload "v${NEXT_VERSION}" "${ROOT_DIR}/AudioFile.dmg" "${ROOT_DIR}/AudioFile.app.zip" --clobber
 else
-    gh release create "v${NEXT_VERSION}" "${ROOT_DIR}/AudioFile.app.zip" \
+    gh release create "v${NEXT_VERSION}" \
+        "${ROOT_DIR}/AudioFile.dmg#AudioFile.dmg (macOS Installer)" \
+        "${ROOT_DIR}/AudioFile.app.zip#AudioFile.app.zip (macOS App Bundle)" \
         --title "AudioFile v${NEXT_VERSION}" \
         --generate-notes
 fi
