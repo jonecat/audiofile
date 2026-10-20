@@ -23,7 +23,7 @@ public struct ArtistsView: View {
 
                 List(artists, id: \.self, selection: $vm.selectedArtist) { artist in
                     let trackCount = vm.library.tracks(for: artist).count
-                    HStack {
+                    HStack(spacing: 10) {
                         Text(artist)
                             .font(.system(size: 13))
                             .lineLimit(1)
@@ -32,23 +32,19 @@ public struct ArtistsView: View {
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
+                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
                     .tag(artist)
                 }
                 .listStyle(.plain)
-                .onChange(of: vm.selectedArtist) { _, newArtist in
-                    if let artist = newArtist {
-                        let artistAlbums = albums(for: artist)
-                        if let currentAlbum = vm.selectedAlbum, artistAlbums.contains(currentAlbum) {
-                            // Keep current selection
-                        } else {
-                            vm.selectedAlbum = artistAlbums.first
-                        }
-                    }
+                .onChange(of: vm.selectedArtist) { _, _ in
+                    vm.selectedAlbum = nil
                 }
             }
-            .frame(minWidth: 160, idealWidth: 200, maxWidth: 240, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 8)
+            .frame(minWidth: 180, idealWidth: 220, maxWidth: 265, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
 
@@ -60,6 +56,17 @@ public struct ArtistsView: View {
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
                     Spacer()
+                    if vm.selectedAlbum != nil {
+                        Button {
+                            vm.selectedAlbum = nil
+                        } label: {
+                            Text("All")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Color.accentColor)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Show songs from all albums by this artist")
+                    }
                     if let artist = vm.selectedArtist {
                         Text("\(albums(for: artist).count)")
                             .font(.system(size: 11, design: .monospaced))
@@ -74,9 +81,9 @@ public struct ArtistsView: View {
                     let albumList = albums(for: artist)
                     List(albumList, id: \.self, selection: $vm.selectedAlbum) { album in
                         let songs = vm.library.tracks(for: artist, album: album)
-                        HStack(spacing: 8) {
-                            ArtworkView(track: songs.first, cornerRadius: 4, shadowRadius: 0)
-                                .frame(width: 28, height: 28)
+                        HStack(spacing: 10) {
+                            ArtworkView(track: songs.first, cornerRadius: 5, shadowRadius: 0)
+                                .frame(width: 32, height: 32)
 
                             Text(album)
                                 .font(.system(size: 13))
@@ -87,6 +94,8 @@ public struct ArtistsView: View {
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .tag(album)
@@ -101,7 +110,8 @@ public struct ArtistsView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .frame(minWidth: 180, idealWidth: 220, maxWidth: 280, maxHeight: .infinity, alignment: .topLeading)
+            .padding(.horizontal, 8)
+            .frame(minWidth: 200, idealWidth: 245, maxWidth: 310, maxHeight: .infinity, alignment: .topLeading)
 
             Divider()
 
@@ -112,9 +122,15 @@ public struct ArtistsView: View {
                         .font(.system(size: 11, weight: .bold))
                         .foregroundColor(.secondary)
                         .textCase(.uppercase)
+                    if let selectedAlbum = vm.selectedAlbum {
+                        Text("• \(selectedAlbum)")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
                     Spacer()
-                    if let artist = vm.selectedArtist, let album = vm.selectedAlbum {
-                        Text("\(songs(for: artist, album: album).count)")
+                    if let artist = vm.selectedArtist {
+                        Text("\(displayedSongs(for: artist).count)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(.secondary)
                     }
@@ -123,13 +139,13 @@ public struct ArtistsView: View {
                 .padding(.top, 12)
                 .padding(.bottom, 8)
 
-                if let artist = vm.selectedArtist, let album = vm.selectedAlbum {
-                    let songList = songs(for: artist, album: album)
+                if let artist = vm.selectedArtist {
+                    let songList = displayedSongs(for: artist)
                     List(songList, selection: $vm.selectedTrackId) { track in
                         let isPlaying = (vm.audio.currentTrack?.id == track.id)
                         let isSelected = (vm.selectedTrackId == track.id)
 
-                        HStack(spacing: 10) {
+                        HStack(spacing: 12) {
                             // Track number or playing indicator
                             if isPlaying && vm.audio.state == .playing {
                                 Image(systemName: "speaker.wave.2.fill")
@@ -148,11 +164,24 @@ public struct ArtistsView: View {
                                     .frame(width: 24, alignment: .trailing)
                             }
 
-                            // Title
-                            Text(track.displayTitle)
-                                .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                                .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
-                                .lineLimit(1)
+                            // Song Artwork
+                            ArtworkView(track: track, cornerRadius: 5, shadowRadius: 0)
+                                .frame(width: 32, height: 32)
+
+                            // Title (and Album subtitle when viewing all albums for this artist)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(track.displayTitle)
+                                    .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                                    .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                                    .lineLimit(1)
+
+                                if vm.selectedAlbum == nil {
+                                    Text(track.displayAlbum)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
 
                             Spacer()
 
@@ -168,6 +197,8 @@ public struct ArtistsView: View {
                             // Kebab Menu
                             TrackKebabMenuButton(vm: vm, track: track, trackList: songList, isHighlighted: isSelected)
                         }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 6)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .contentShape(Rectangle())
                         .tag(track.id)
@@ -186,19 +217,20 @@ public struct ArtistsView: View {
                     }
                 } else {
                     ContentUnavailableView(
-                        "No Album Selected",
-                        systemImage: "square.stack",
-                        description: Text("Select an album to view its tracks")
+                        "No Artist Selected",
+                        systemImage: "music.note",
+                        description: Text("Select an artist to view their songs")
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .padding(.horizontal, 8)
             .frame(minWidth: 260, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .onAppear {
             if vm.selectedArtist == nil, let first = artists.first {
                 vm.selectedArtist = first
-                vm.selectedAlbum = albums(for: first).first
+                vm.selectedAlbum = nil
             }
         }
     }
@@ -214,7 +246,7 @@ public struct ArtistsView: View {
         vm.library.albums(for: artist)
     }
 
-    private func songs(for artist: String, album: String) -> [Track] {
-        vm.library.tracks(for: artist, album: album)
+    private func displayedSongs(for artist: String) -> [Track] {
+        vm.library.tracks(for: artist, album: vm.selectedAlbum)
     }
 }

@@ -38,11 +38,17 @@ public struct SongsView: View {
                 let isPlaying = (vm.audio.currentTrack?.id == track.id)
                 let isSelected = (vm.selectedTrackId == track.id)
 
-                Text(track.displayTitle)
-                    .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                    .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                HStack(spacing: 10) {
+                    ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0)
+                        .frame(width: 28, height: 28)
+
+                    Text(track.displayTitle)
+                        .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                        .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                        .lineLimit(1)
+                }
             }
-            .width(min: 160, ideal: 240)
+            .width(min: 180, ideal: 260)
 
             TableColumn("Artist", value: \.displayArtist) { track in
                 Text(track.displayArtist)

@@ -251,12 +251,24 @@ public final class LibraryManager: ObservableObject {
     }
 
     public func tracks(for artist: String, album: String? = nil) -> [Track] {
-        tracks.filter { track in
+        let filtered = tracks.filter { track in
             let matchArtist = (track.displayArtist == artist || track.displayAlbumArtist == artist)
             if let alb = album {
                 return matchArtist && track.displayAlbum == alb
             }
             return matchArtist
+        }
+        return filtered.sorted { a, b in
+            if a.displayAlbum != b.displayAlbum {
+                return a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum) == .orderedAscending
+            }
+            if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
+                return (a.discNumber ?? 1) < (b.discNumber ?? 1)
+            }
+            if (a.trackNumber ?? 0) != (b.trackNumber ?? 0) {
+                return (a.trackNumber ?? 0) < (b.trackNumber ?? 0)
+            }
+            return a.displayTitle.localizedCaseInsensitiveCompare(b.displayTitle) == .orderedAscending
         }
     }
 

@@ -7,17 +7,17 @@ public struct PlayerBarView: View {
     public var body: some View {
         HStack(spacing: 16) {
             // Track Artwork & Info
-            HStack(spacing: 12) {
+            HStack(spacing: 14) {
                 Button {
                     vm.selectedSection = .visualizer
                 } label: {
-                    ArtworkView(track: audio.currentTrack, cornerRadius: 6, shadowRadius: 2)
-                        .frame(width: 44, height: 44)
+                    ArtworkView(track: audio.currentTrack, cornerRadius: 8, shadowRadius: 3)
+                        .frame(width: 66, height: 66)
                 }
                 .buttonStyle(.plain)
                 .help("Open Now Playing & Visualizer (⌘4)")
 
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 3) {
                     if let track = audio.currentTrack {
                         Text(track.displayTitle)
                             .font(.system(size: 13, weight: .semibold))
