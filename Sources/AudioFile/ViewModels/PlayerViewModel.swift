@@ -222,6 +222,7 @@ public final class PlayerViewModel: ObservableObject {
         guard !allTracks.isEmpty else { return }
 
         isLibraryShuffleActive = true
+        shuffle = true
         if repeatMode == .off {
             repeatMode = .all
         }
@@ -240,6 +241,7 @@ public final class PlayerViewModel: ObservableObject {
     public func stopLibraryShuffle() {
         isLibraryShuffleActive = false
         shuffle = false
+        repeatMode = .off
         audio.stop()
     }
 
@@ -259,6 +261,7 @@ public final class PlayerViewModel: ObservableObject {
         if isLibraryShuffleActive {
             isLibraryShuffleActive = false
             shuffle = false
+            repeatMode = .off
         }
         selectedTrackId = track.id
         if trackList.isEmpty {
