@@ -34,7 +34,7 @@ public struct AboutView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 Label("Pure Swift, SwiftUI & Accelerate vDSP", systemImage: "bolt.fill")
-                Label("Lossless Gapless Playback (FLAC, ALAC, WAV, AIFF, M4A)", systemImage: "sparkles")
+                Label("Lossless Gapless Playback (FLAC, ALAC, WAV, AIFF, APE, DSD, M4A, MP3)", systemImage: "sparkles")
                 Label("LRCLIB Synchronized 3-Line Lyrics Engine", systemImage: "quote.bubble.fill")
                 Label("Real-Time 64-Band FFT Spectrum Analyzer", systemImage: "waveform.path")
                 Label("Native macOS Media Keys & Control Center", systemImage: "macwindow")

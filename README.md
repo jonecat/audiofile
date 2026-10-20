@@ -32,9 +32,10 @@ curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/inst
   - High-contrast lossless format badges (`FLAC`, `ALAC`, `WAV`, `AIFF`) and full-row selection contrast that keeps active/playing tracks crisp when highlighted.
   - Dynamic system accent color integration: all active controls, spectrum analyzer bars, waveform progress, format badges, and lyric highlights follow the macOS Appearance accent color in real time.
   - Hover tooltips (`.help`) across all buttons and interactive controls.
-- **Audiophile Lossless Playback & CoreAudio Engine**:
+- **Audiophile Lossless Playback & CoreAudio + Open-Source Decoder Engine**:
   - Native hardware-accelerated decoding for **FLAC**, **ALAC** (Apple Lossless), **WAV**, **AIFF**, **M4A/AAC**, and **MP3** via Apple `AVFoundation` and `CoreAudio`.
-  - Full support for **16-bit**, **24-bit**, and **32-bit Float** lossless audio with exact sample rates (`44.1 kHz`, `48 kHz`, `88.2 kHz`, `96 kHz`, `176.4 kHz`, `192 kHz`).
+  - Built-in open-source decoding for **DSD** (`.dsf`, `.dff` 1-bit 2.82 MHz / 5.64 MHz SACD streams via a pure-Swift lookup-table FIR decimator) and **APE** (`.ape` Monkey's Audio via native APEv2/MAC header parsing and open-source `ffmpeg` lossless PCM caching).
+  - Full support for **1-bit DSD**, **16-bit**, **24-bit**, and **32-bit Float** lossless audio with exact sample rates (`44.1 kHz` – `192 kHz` PCM and `2.82 MHz` / `5.64 MHz` DSD64/DSD128).
   - True **gapless transitions** with double-buffered boundary sample alignment.
   - **Continuous Library Shuffle (`⇧⌘S`)**: Top-toolbar **Shuffle Library** button shuffles your entire collection and automatically queues freshly shuffled passes as the queue nears completion so playback never stops until you stop it.
   - Software volume boost up to 150% and instant mute/unmute.
@@ -163,6 +164,7 @@ audiofile/
         │   └── LRC.swift                   # Synced lyrics parser, 5-line sliding window & normalized instrumental lines
         ├── Audio/
         │   ├── AudioEngine.swift           # AVAudioEngine player, audio tap, gapless queue & MPRemoteCommandCenter
+        │   ├── OpenSourceDecoders.swift    # Pure-Swift DSF/DFF 1-bit DSD decimator, APEv2/ID3v2 parser & FFmpeg APE decoder
         │   ├── VisualizerEngine.swift      # Accelerate vDSP 64-band FFT, logarithmic spacing & ballistics physics
         │   └── WaveformEngine.swift        # Background track amplitude dynamics analyzer & disk cache
         ├── Lyrics/

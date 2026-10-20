@@ -108,7 +108,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
 
     public var isLossless: Bool {
         let upper = format.uppercased()
-        return upper == "FLAC" || upper == "ALAC" || upper == "WAV" || upper == "AIFF" || upper == "AIF"
+        return upper == "FLAC" || upper == "ALAC" || upper == "WAV" || upper == "AIFF" || upper == "AIF" || upper == "APE" || upper == "DSD"
     }
 
     public var qualityDescription: String {
@@ -120,7 +120,10 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         }
 
         if let rate = sampleRate, rate > 0 {
-            if rate >= 1000.0 {
+            if rate >= 1_000_000.0 {
+                let mhz = rate / 1_000_000.0
+                parts.append(String(format: "%.2f MHz", mhz))
+            } else if rate >= 1000.0 {
                 let khz = rate / 1000.0
                 if khz == khz.rounded() {
                     parts.append(String(format: "%.0f kHz", khz))

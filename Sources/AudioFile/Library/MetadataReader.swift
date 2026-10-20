@@ -4,7 +4,8 @@ import AppKit
 
 public struct MetadataReader: Sendable {
     public static let supportedExtensions: Set<String> = [
-        "flac", "alac", "wav", "wave", "aiff", "aif", "m4a", "aac", "mp3", "caf"
+        "flac", "alac", "wav", "wave", "aiff", "aif", "m4a", "aac", "mp3", "caf",
+        "ape", "dsf", "dff", "dsd"
     ]
 
     public static func isAudioFile(_ url: URL) -> Bool {
@@ -38,8 +39,23 @@ public struct MetadataReader: Sendable {
         let fileSize = fileValues?.fileSize.map { UInt64($0) }
         let modifiedDate = fileValues?.contentModificationDate
 
-        // 2. Read technical audio properties with AVAudioFile
-        if let audioFile = try? AVAudioFile(forReading: url) {
+        // 2. Read technical audio properties & tags for APE / DSD formats or via AVAudioFile
+        if OpenSourceDecoders.requiresCustomDecoder(url) {
+            let decodedMeta = OpenSourceDecoders.readMetadata(for: url)
+            title = decodedMeta.title
+            artist = decodedMeta.artist
+            album = decodedMeta.album
+            albumArtist = decodedMeta.albumArtist
+            genre = decodedMeta.genre
+            year = decodedMeta.year
+            trackNumber = decodedMeta.trackNumber
+            discNumber = decodedMeta.discNumber
+            duration = decodedMeta.duration
+            sampleRate = decodedMeta.sampleRate
+            bitDepth = decodedMeta.bitDepth
+            bitrate = decodedMeta.bitrate
+            hasCoverArt = decodedMeta.hasCoverArt
+        } else if let audioFile = try? AVAudioFile(forReading: url) {
             let fileFormat = audioFile.fileFormat
             sampleRate = fileFormat.sampleRate
             duration = Double(audioFile.length) / fileFormat.sampleRate
@@ -204,7 +220,15 @@ public struct MetadataReader: Sendable {
             }
         }
 
-        // 2. Read embedded artwork from AVURLAsset
+        // 2. Read embedded artwork from APEv2 / DSF / DFF custom parser if applicable
+        if OpenSourceDecoders.requiresCustomDecoder(track.path) {
+            let decodedMeta = OpenSourceDecoders.readMetadata(for: track.path)
+            if let imgData = decodedMeta.embeddedArtwork, let img = NSImage(data: imgData) {
+                return img
+            }
+        }
+
+        // 3. Read embedded artwork from AVURLAsset
         let asset = AVURLAsset(url: track.path)
         if let metadata = try? await asset.load(.metadata) {
             for item in metadata {
@@ -239,6 +263,8 @@ public struct MetadataReader: Sendable {
         case "aac": return "AAC"
         case "mp3": return "MP3"
         case "caf": return "CAF"
+        case "ape": return "APE"
+        case "dsf", "dff", "dsd": return "DSD"
         default: return ext.uppercased()
         }
     }

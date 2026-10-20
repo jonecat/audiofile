@@ -115,7 +115,7 @@ public actor WaveformEngine {
     }
 
     private static func computeAccurate(path: URL, bins: Int) -> [Float]? {
-        guard let file = try? AVAudioFile(forReading: path) else { return nil }
+        guard let file = try? OpenSourceDecoders.openAudioFile(for: path) else { return nil }
         let totalFrames = file.length
         guard totalFrames > 0 else { return nil }
 

@@ -225,15 +225,15 @@ public struct SettingsView: View {
                     }
                     GridRow {
                         Text("Supported Formats:").foregroundColor(.secondary)
-                        Text("FLAC, ALAC (Apple Lossless), WAV, AIFF, M4A/AAC, MP3")
+                        Text("FLAC, ALAC, WAV, AIFF, APE, DSD (DSF/DFF), M4A/AAC, MP3")
                     }
                     GridRow {
                         Text("Bit Depths:").foregroundColor(.secondary)
-                        Text("16-bit, 24-bit, 32-bit Float")
+                        Text("1-bit DSD, 16-bit, 24-bit, 32-bit Float")
                     }
                     GridRow {
                         Text("Sample Rates:").foregroundColor(.secondary)
-                        Text("44.1 kHz, 48.0 kHz, 88.2 kHz, 96.0 kHz, 176.4 kHz, 192.0 kHz")
+                        Text("44.1 – 192 kHz PCM • 2.82 / 5.64 MHz DSD64/128")
                     }
                     GridRow {
                         Text("Gapless Preload:").foregroundColor(.secondary)
@@ -396,7 +396,7 @@ public struct SettingsView: View {
             AboutSpecification("Lyrics Provider", "LRCLIB API (Synchronized 5-Line LRC)"),
             AboutSpecification("Waveform Engine", "Asynchronous RMS downsampling & dynamics cache"),
             AboutSpecification("Playback Pipeline", "Lossless gapless boundary preloading"),
-            AboutSpecification("Audio Codecs", "FLAC, ALAC, WAV, AIFF, M4A/AAC, MP3"),
+            AboutSpecification("Audio Codecs", "FLAC, ALAC, WAV, AIFF, APE, DSD (DSF/DFF), M4A/AAC, MP3"),
             AboutSpecification("Author", "Jon Lawrence"),
             AboutSpecification("Repository", "https://github.com/jonecat/audiofile"),
             AboutSpecification("License", "MIT License")

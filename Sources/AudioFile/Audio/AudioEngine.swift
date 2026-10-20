@@ -155,7 +155,7 @@ public final class AudioEngine: ObservableObject {
         seekFrameOffset = 0
 
         do {
-            let file = try AVAudioFile(forReading: track.path)
+            let file = try OpenSourceDecoders.openAudioFile(for: track.path)
             self.audioFile = file
             self.currentTrack = track
             self.totalFrames = file.length
@@ -311,7 +311,7 @@ public final class AudioEngine: ObservableObject {
         guard preloadedTrack?.id != track.id else { return }
         preloadedTrack = track
         Task.detached(priority: .utility) {
-            let file = try? AVAudioFile(forReading: track.path)
+            let file = try? OpenSourceDecoders.openAudioFile(for: track.path)
             await MainActor.run {
                 self.preloadedFile = file
             }
