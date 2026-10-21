@@ -164,14 +164,23 @@ public enum OpenSourceDecoders {
         let totalFileSize = readUInt64LE(header, offset: 12)
         let metadataOffset = readUInt64LE(header, offset: 20)
 
-        // 'fmt ' chunk starts at byte 28
+        // 'fmt ' chunk starts at byte 28:
+        // 28..<32: "fmt "
+        // 32..<40: chunk size (52)
+        // 40..<44: format version (1)
+        // 44..<48: format ID (0 = DSD raw)
+        // 48..<52: channel type (2 = stereo)
+        // 52..<56: channel count (2)
+        // 56..<60: sampling frequency in Hz (2822400 = DSD64, 5644800 = DSD128, 11289600 = DSD256)
+        // 60..<64: bits per sample (1 = LSB first, 8 = MSB first; DSD is always 1-bit PDM)
+        // 64..<72: sample count per channel (UInt64 LE)
+        // 72..<76: block size per channel (4096)
         guard String(data: header[28..<32], encoding: .ascii) == "fmt " else { return }
-        let sampleRate = readUInt32LE(header, offset: 48)
-        let bitsPerSample = readUInt32LE(header, offset: 52)
-        let sampleCount = readUInt64LE(header, offset: 56)
+        let sampleRate = readUInt32LE(header, offset: 56)
+        let sampleCount = readUInt64LE(header, offset: 64)
 
         meta.sampleRate = Double(sampleRate)
-        meta.bitDepth = Int(bitsPerSample)
+        meta.bitDepth = 1
         if sampleRate > 0 && sampleCount > 0 {
             meta.duration = Double(sampleCount) / Double(sampleRate)
             if meta.duration > 0 {
@@ -203,11 +212,11 @@ public enum OpenSourceDecoders {
             throw NSError(domain: "DSFDecoder", code: 2)
         }
 
-        let channels = Int(readUInt32LE(header, offset: 44))
-        let dsdSampleRate = Int(readUInt32LE(header, offset: 48))
-        let bitsPerSample = Int(readUInt32LE(header, offset: 52)) // 1 = LSB first, 8 = MSB first
-        let totalDSDSamples = Int64(readUInt64LE(header, offset: 56))
-        let blockSizePerChannel = Int(readUInt32LE(header, offset: 64))
+        let channels = Int(readUInt32LE(header, offset: 52))
+        let dsdSampleRate = Int(readUInt32LE(header, offset: 56))
+        let bitsPerSample = Int(readUInt32LE(header, offset: 60)) // 1 = LSB first, 8 = MSB first
+        let totalDSDSamples = Int64(readUInt64LE(header, offset: 64))
+        let blockSizePerChannel = Int(readUInt32LE(header, offset: 72))
         let dataChunkSize = Int64(readUInt64LE(header, offset: 84)) - 12
 
         guard channels >= 1 && channels <= 2,

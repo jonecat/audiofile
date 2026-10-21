@@ -78,8 +78,8 @@ public struct SongsView: View {
             .width(60)
 
             TableColumn("Quality") { track in
-                if let depth = track.bitDepth, depth > 0, let rate = track.sampleRate {
-                    Text("\(depth)-bit • \(String(format: "%.1f", rate / 1000.0)) kHz")
+                if let depth = track.bitDepth, depth > 0, let rateStr = track.formattedSampleRate {
+                    Text("\(depth)-bit • \(rateStr)")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 } else if let br = track.bitrate {
@@ -88,7 +88,7 @@ public struct SongsView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            .width(110)
+            .width(140)
 
             TableColumn("") { track in
                 let isSelected = (vm.selectedTrackId == track.id)

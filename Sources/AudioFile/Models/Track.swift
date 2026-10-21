@@ -111,6 +111,61 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         return upper == "FLAC" || upper == "ALAC" || upper == "WAV" || upper == "AIFF" || upper == "AIF" || upper == "APE" || upper == "DSD"
     }
 
+    public var dsdTierLabel: String? {
+        guard format.uppercased() == "DSD", let rate = sampleRate, rate >= 2_000_000 else {
+            return nil
+        }
+        let ratio = Int((rate / 44_100.0).rounded())
+        switch ratio {
+        case 56...72: return "DSD64"
+        case 112...144: return "DSD128"
+        case 224...288: return "DSD256"
+        case 448...576: return "DSD512"
+        case 896...1152: return "DSD1024"
+        default: return nil
+        }
+    }
+
+    public var formattedSampleRate: String? {
+        guard let rate = sampleRate, rate > 0 else { return nil }
+        if rate >= 1_000_000.0 {
+            let mhz = rate / 1_000_000.0
+            if let tier = dsdTierLabel {
+                return String(format: "%.2f MHz (%@)", mhz, tier)
+            }
+            return String(format: "%.2f MHz", mhz)
+        } else if rate >= 1000.0 {
+            let khz = rate / 1000.0
+            if khz == khz.rounded() {
+                return String(format: "%.0f kHz", khz)
+            } else {
+                return String(format: "%.1f kHz", khz)
+            }
+        } else {
+            return "\(Int(rate)) Hz"
+        }
+    }
+
+    public var shortQualityDescription: String? {
+        guard let depth = bitDepth, depth > 0, let rate = sampleRate, rate > 0 else {
+            return nil
+        }
+        if rate >= 1_000_000.0 {
+            let mhz = rate / 1_000_000.0
+            if let tier = dsdTierLabel {
+                return String(format: "%d-bit/%.2fMHz (%@)", depth, mhz, tier)
+            }
+            return String(format: "%d-bit/%.2fMHz", depth, mhz)
+        } else {
+            let khz = rate / 1000.0
+            if khz == khz.rounded() {
+                return String(format: "%d-bit/%.0fkHz", depth, khz)
+            } else {
+                return String(format: "%d-bit/%.1fkHz", depth, khz)
+            }
+        }
+    }
+
     public var qualityDescription: String {
         var parts: [String] = []
 
@@ -118,20 +173,8 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
             parts.append("\(depth)-bit")
         }
 
-        if let rate = sampleRate, rate > 0 {
-            if rate >= 1_000_000.0 {
-                let mhz = rate / 1_000_000.0
-                parts.append(String(format: "%.2f MHz", mhz))
-            } else if rate >= 1000.0 {
-                let khz = rate / 1000.0
-                if khz == khz.rounded() {
-                    parts.append(String(format: "%.0f kHz", khz))
-                } else {
-                    parts.append(String(format: "%.1f kHz", khz))
-                }
-            } else {
-                parts.append("\(Int(rate)) Hz")
-            }
+        if let formattedRate = formattedSampleRate {
+            parts.append(formattedRate)
         } else if let br = bitrate, br > 0 {
             parts.append("\(br) kbps")
         }

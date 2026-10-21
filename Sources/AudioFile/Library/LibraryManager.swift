@@ -88,6 +88,23 @@ public final class LibraryManager: ObservableObject {
                         modified = true
                     }
                 }
+                if OpenSourceDecoders.requiresCustomDecoder(loaded[i].path) &&
+                    ((loaded[i].sampleRate ?? 0) < 8000 || loaded[i].duration <= 0 || loaded[i].duration > 86_400) {
+                    let meta = OpenSourceDecoders.readMetadata(for: loaded[i].path)
+                    if let sr = meta.sampleRate, sr > 0 {
+                        loaded[i].sampleRate = sr
+                    }
+                    if let bd = meta.bitDepth, bd > 0 {
+                        loaded[i].bitDepth = bd
+                    }
+                    if meta.duration > 0 {
+                        loaded[i].duration = meta.duration
+                    }
+                    if let br = meta.bitrate, br > 0 {
+                        loaded[i].bitrate = br
+                    }
+                    modified = true
+                }
             }
             self.tracks = loaded
             sortTracks()
@@ -208,7 +225,9 @@ public final class LibraryManager: ObservableObject {
                     if !fullRescan, let existing = existingMap[filePath],
                        existing.fileSize == curSize,
                        existing.modifiedDate == curDate,
-                       existing.trackNumber != nil {
+                       existing.trackNumber != nil,
+                       (existing.sampleRate ?? 44100) >= 8000,
+                       existing.duration > 0 && existing.duration < 86_400 {
                         // Unmodified file with complete track metadata, preserve cached track metadata!
                         discoveredTracks.append(existing)
                     } else {

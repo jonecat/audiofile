@@ -30,10 +30,11 @@ public struct PlayerBarView: View {
 
                         HStack(spacing: 6) {
                             FormatBadgeView(format: track.format, isLossless: track.isLossless)
-                            if let depth = track.bitDepth, depth > 0, let rate = track.sampleRate {
-                                Text("\(depth)-bit/\(Int(rate / 1000.0))kHz")
+                            if let shortQuality = track.shortQualityDescription {
+                                Text(shortQuality)
                                     .font(.system(size: 9, weight: .medium, design: .monospaced))
                                     .foregroundColor(.secondary)
+                                    .lineLimit(1)
                             }
                         }
                     } else {

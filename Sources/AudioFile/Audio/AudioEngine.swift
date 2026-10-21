@@ -161,7 +161,8 @@ public final class AudioEngine: ObservableObject {
             self.currentTrack = track
             self.totalFrames = file.length
             self.fileSampleRate = file.fileFormat.sampleRate
-            self.duration = track.duration > 0 ? track.duration : Double(file.length) / file.fileFormat.sampleRate
+            let fileDuration = file.fileFormat.sampleRate > 0 ? Double(file.length) / file.fileFormat.sampleRate : 0
+            self.duration = fileDuration > 0 ? fileDuration : max(0, track.duration)
 
             VisualizerEngine.shared.setSampleRate(fileSampleRate)
 
