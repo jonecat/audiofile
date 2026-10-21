@@ -41,6 +41,7 @@ public struct ArtistsView: View {
                 .listStyle(.plain)
                 .onChange(of: vm.selectedArtist) { _, _ in
                     vm.selectedAlbum = nil
+                    vm.selectedTrackIds.removeAll()
                 }
             }
             .padding(.horizontal, 8)
@@ -144,9 +145,9 @@ public struct ArtistsView: View {
 
                 if let artist = vm.selectedArtist {
                     let songList = displayedSongs(for: artist)
-                    List(songList, selection: $vm.selectedTrackId) { track in
+                    List(songList, selection: $vm.selectedTrackIds) { track in
                         let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                        let isSelected = (vm.selectedTrackId == track.id)
+                        let isSelected = vm.selectedTrackIds.contains(track.id)
 
                         HStack(spacing: 12) {
                             // Track number or playing indicator
@@ -173,10 +174,18 @@ public struct ArtistsView: View {
 
                             // Title (and Album subtitle when viewing all albums for this artist)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(track.displayTitle)
-                                    .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                                    .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
-                                    .lineLimit(1)
+                                HStack(spacing: 6) {
+                                    Text(track.displayTitle)
+                                        .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                                        .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                                        .lineLimit(1)
+
+                                    if vm.playlists.isFavorite(trackId: track.id) {
+                                        Image(systemName: "star.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(isSelected ? Color.white.opacity(0.9) : Color.accentColor)
+                                    }
+                                }
 
                                 if vm.selectedAlbum == nil {
                                     Text(track.displayAlbum)
@@ -208,9 +217,9 @@ public struct ArtistsView: View {
                     }
                     .listStyle(.plain)
                     .contextMenu(forSelectionType: String.self) { selection in
-                        if let trackId = selection.first,
-                           let track = songList.first(where: { $0.id == trackId }) {
-                            TrackMenuItems(vm: vm, track: track, trackList: songList)
+                        let selectedTracks = songList.filter { selection.contains($0.id) }
+                        if !selectedTracks.isEmpty {
+                            TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: songList)
                         }
                     } primaryAction: { selection in
                         if let trackId = selection.first,

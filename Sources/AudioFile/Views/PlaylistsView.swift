@@ -83,10 +83,10 @@ public struct PlaylistsView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List(selection: $vm.selectedTrackId) {
+                List(selection: $vm.selectedTrackIds) {
                     ForEach(Array(currentTracks.enumerated()), id: \.element.id) { index, track in
                         let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                        let isSelected = (vm.selectedTrackId == track.id)
+                        let isSelected = vm.selectedTrackIds.contains(track.id)
 
                         HStack(spacing: 12) {
                             Text("\(index + 1)")
@@ -98,10 +98,18 @@ public struct PlaylistsView: View {
                                 .frame(width: 32, height: 32)
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(track.displayTitle)
-                                    .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                                    .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
-                                    .lineLimit(1)
+                                HStack(spacing: 6) {
+                                    Text(track.displayTitle)
+                                        .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                                        .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                                        .lineLimit(1)
+
+                                    if vm.playlists.isFavorite(trackId: track.id) {
+                                        Image(systemName: "star.fill")
+                                            .font(.system(size: 10))
+                                            .foregroundStyle(isSelected ? Color.white.opacity(0.9) : Color.accentColor)
+                                    }
+                                }
 
                                 Text(track.displayArtist + " • " + track.displayAlbum)
                                     .font(.system(size: 11))
@@ -132,14 +140,22 @@ public struct PlaylistsView: View {
                 }
                 .listStyle(.plain)
                 .contextMenu(forSelectionType: String.self) { selection in
-                    if let trackId = selection.first,
-                       let index = currentTracks.firstIndex(where: { $0.id == trackId }) {
-                        let track = currentTracks[index]
+                    let selectedTracks = currentTracks.filter { selection.contains($0.id) }
+                    if !selectedTracks.isEmpty {
+                        let multiRemoveAction: (() -> Void)? = {
+                            if case .playlist(let plId) = section {
+                                return {
+                                    vm.playlists.removeTracks(from: plId, trackIds: Array(selection))
+                                    vm.selectedTrackIds.removeAll()
+                                }
+                            }
+                            return nil
+                        }()
                         TrackMenuItems(
                             vm: vm,
-                            track: track,
+                            tracks: selectedTracks,
                             trackList: currentTracks,
-                            removeAction: removeClosure(at: index)
+                            removeAction: multiRemoveAction
                         )
                     }
                 } primaryAction: { selection in

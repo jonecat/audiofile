@@ -69,6 +69,32 @@ public final class PlaylistManager: ObservableObject {
         save()
     }
 
+    public func addFavorites(trackIds: [String]) {
+        var changed = false
+        for id in trackIds {
+            if !favorites.contains(id) {
+                favorites.insert(id)
+                changed = true
+            }
+        }
+        if changed {
+            save()
+        }
+    }
+
+    public func removeFavorites(trackIds: [String]) {
+        var changed = false
+        for id in trackIds {
+            if favorites.contains(id) {
+                favorites.remove(id)
+                changed = true
+            }
+        }
+        if changed {
+            save()
+        }
+    }
+
     public func recordPlayed(trackId: String) {
         recentlyPlayed.removeAll { $0 == trackId }
         recentlyPlayed.insert(trackId, at: 0)
@@ -103,6 +129,32 @@ public final class PlaylistManager: ObservableObject {
         if let idx = playlists.firstIndex(where: { $0.id == playlistId }) {
             if !playlists[idx].trackIds.contains(trackId) {
                 playlists[idx].trackIds.append(trackId)
+                save()
+            }
+        }
+    }
+
+    public func addTracks(to playlistId: String, trackIds: [String]) {
+        if let idx = playlists.firstIndex(where: { $0.id == playlistId }) {
+            var changed = false
+            for trackId in trackIds {
+                if !playlists[idx].trackIds.contains(trackId) {
+                    playlists[idx].trackIds.append(trackId)
+                    changed = true
+                }
+            }
+            if changed {
+                save()
+            }
+        }
+    }
+
+    public func removeTracks(from playlistId: String, trackIds: [String]) {
+        if let idx = playlists.firstIndex(where: { $0.id == playlistId }) {
+            let idSet = Set(trackIds)
+            let prevCount = playlists[idx].trackIds.count
+            playlists[idx].trackIds.removeAll { idSet.contains($0) }
+            if playlists[idx].trackIds.count != prevCount {
                 save()
             }
         }

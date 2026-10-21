@@ -88,7 +88,18 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var selectedArtist: String?
     @Published public var selectedAlbum: String?
     @Published public var selectedAlbumDetail: LibraryManager.AlbumInfo?
-    @Published public var selectedTrackId: String?
+    @Published public var selectedTrackIds: Set<String> = []
+
+    public var selectedTrackId: String? {
+        get { selectedTrackIds.first }
+        set {
+            if let val = newValue {
+                selectedTrackIds = [val]
+            } else {
+                selectedTrackIds.removeAll()
+            }
+        }
+    }
     @Published public var sortOrder: [KeyPathComparator<Track>] = [
         .init(\.displayArtist, order: .forward)
     ]
@@ -181,6 +192,14 @@ public final class PlayerViewModel: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.updateFilteredAndSortedTracks()
+            }
+            .store(in: &cancellables)
+
+        // Forward playlist & favorite changes to PlayerViewModel observers
+        playlists.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
             }
             .store(in: &cancellables)
 
@@ -437,6 +456,32 @@ public final class PlayerViewModel: ObservableObject {
 
     public func toggleFavorite(track: Track) {
         playlists.toggleFavorite(trackId: track.id)
+    }
+
+    public func toggleFavorite(trackId: String) {
+        playlists.toggleFavorite(trackId: trackId)
+    }
+
+    public func toggleFavorite(trackIds: [String]) {
+        guard !trackIds.isEmpty else { return }
+        let allFavs = trackIds.allSatisfy { playlists.isFavorite(trackId: $0) }
+        if allFavs {
+            playlists.removeFavorites(trackIds: trackIds)
+        } else {
+            playlists.addFavorites(trackIds: trackIds)
+        }
+    }
+
+    public func addTracksToPlaylist(trackIds: [String], playlistId: String) {
+        playlists.addTracks(to: playlistId, trackIds: trackIds)
+    }
+
+    public func toggleFavoriteSelectedOrCurrentTrack() {
+        if !selectedTrackIds.isEmpty {
+            toggleFavorite(trackIds: Array(selectedTrackIds))
+        } else if let track = audio.currentTrack {
+            playlists.toggleFavorite(trackId: track.id)
+        }
     }
 
     public var isCurrentTrackFavorite: Bool {

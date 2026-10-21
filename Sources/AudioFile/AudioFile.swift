@@ -18,7 +18,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyEventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let keyCode = event.keyCode
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                .subtracting([.numericPad, .function])
+                .subtracting([.numericPad, .function, .capsLock])
+            let chars = event.charactersIgnoringModifiers?.lowercased()
 
             let handled = MainActor.assumeIsolated { () -> Bool in
                 // Allow normal typing and cursor navigation when a text field / search field is focused
@@ -54,7 +55,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         PlayerViewModel.shared.audio.togglePlayPause()
                         return true
                     }
+                case 3: // 'F' key (kVK_ANSI_F)
+                    if flags.isEmpty || flags == .shift {
+                        PlayerViewModel.shared.toggleFavoriteSelectedOrCurrentTrack()
+                        return true
+                    }
                 default:
+                    if (flags.isEmpty || flags == .shift) && chars == "f" {
+                        PlayerViewModel.shared.toggleFavoriteSelectedOrCurrentTrack()
+                        return true
+                    }
                     break
                 }
 
@@ -171,10 +181,8 @@ struct AudioFileApp: App {
                 }
                 .keyboardShortcut("l", modifiers: [])
 
-                Button("Favorite Current Track") {
-                    if let t = vm.audio.currentTrack {
-                        vm.toggleFavorite(track: t)
-                    }
+                Button("Favorite") {
+                    vm.toggleFavoriteSelectedOrCurrentTrack()
                 }
                 .keyboardShortcut("f", modifiers: [])
             }

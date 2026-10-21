@@ -4,10 +4,10 @@ public struct SongsView: View {
     @ObservedObject var vm: PlayerViewModel
 
     public var body: some View {
-        Table(vm.sortedTracks, selection: $vm.selectedTrackId, sortOrder: $vm.sortOrder) {
+        Table(vm.sortedTracks, selection: $vm.selectedTrackIds, sortOrder: $vm.sortOrder) {
             TableColumn("") { track in
                 let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                let isSelected = (vm.selectedTrackId == track.id)
+                let isSelected = vm.selectedTrackIds.contains(track.id)
 
                 HStack(spacing: 6) {
                     if isPlaying && vm.audio.state == .playing {
@@ -17,7 +17,11 @@ public struct SongsView: View {
                     }
 
                     Button {
-                        vm.toggleFavorite(track: track)
+                        if vm.selectedTrackIds.contains(track.id) && vm.selectedTrackIds.count > 1 {
+                            vm.toggleFavorite(trackIds: Array(vm.selectedTrackIds))
+                        } else {
+                            vm.toggleFavorite(track: track)
+                        }
                     } label: {
                         Image(systemName: vm.playlists.isFavorite(trackId: track.id) ? "star.fill" : "star")
                             .foregroundStyle(
@@ -36,7 +40,7 @@ public struct SongsView: View {
 
             TableColumn("Title", value: \.displayTitle) { track in
                 let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                let isSelected = (vm.selectedTrackId == track.id)
+                let isSelected = vm.selectedTrackIds.contains(track.id)
 
                 HStack(spacing: 10) {
                     ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0)
@@ -72,7 +76,7 @@ public struct SongsView: View {
             .width(64)
 
             TableColumn("Format", value: \.format) { track in
-                let isSelected = (vm.selectedTrackId == track.id)
+                let isSelected = vm.selectedTrackIds.contains(track.id)
                 FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)
             }
             .width(60)
@@ -91,15 +95,15 @@ public struct SongsView: View {
             .width(140)
 
             TableColumn("") { track in
-                let isSelected = (vm.selectedTrackId == track.id)
+                let isSelected = vm.selectedTrackIds.contains(track.id)
                 TrackKebabMenuButton(vm: vm, track: track, trackList: vm.sortedTracks, isHighlighted: isSelected)
             }
             .width(32)
         }
         .contextMenu(forSelectionType: String.self) { selection in
-            if let trackId = selection.first,
-               let track = vm.library.tracks.first(where: { $0.id == trackId }) {
-                TrackMenuItems(vm: vm, track: track, trackList: vm.sortedTracks)
+            let selectedTracks = vm.sortedTracks.filter { selection.contains($0.id) }
+            if !selectedTracks.isEmpty {
+                TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: vm.sortedTracks)
             }
         } primaryAction: { selection in
             if let trackId = selection.first,

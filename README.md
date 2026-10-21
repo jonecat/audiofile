@@ -6,6 +6,10 @@
 
 `AudioFile` is a native macOS audio player designed for audiophiles who demand bit-perfect lossless playback, high-resolution metadata, real-time 64-band FFT spectrum visualization, 5-line synchronized lyrics, and deep Apple ecosystem integration. Built with Apple's native **Liquid Glass** design system (`Glass`, `.glassEffect`, `GlassEffectContainer`, and `.glassEffectID`), every accented element dynamically adapts to your macOS **System Settings → Appearance** accent color.
 
+<p align="center">
+  <img src="Resources/screenshots/artists.png" alt="AudioFile 3-Column Library Browser" width="100%">
+</p>
+
 ## ⬇️ Download & Install Pre-Built macOS App (No Compilation Required)
 
 ### Recommended: 1-Line Terminal Install (Bypasses macOS Gatekeeper Warning)
@@ -21,6 +25,28 @@ curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/inst
 - **[View All Releases on GitHub](https://github.com/jonecat/audiofile/releases/latest)**
 
 *(If downloading via a web browser, run `xattr -cr /Applications/AudioFile.app` once after moving to `/Applications` to clear browser quarantine. All future updates installed via the built-in updater bypass Gatekeeper automatically.)*
+
+---
+
+## 📸 Screenshots
+
+### 3-Column Library Browser (Artists → Albums → Songs)
+Complete hierarchical navigation with live artist, album, and song counters, lossless quality pills, and favorite stars:
+<p align="center">
+  <img src="Resources/screenshots/artists.png" alt="AudioFile 3-Column Library Browser" width="100%">
+</p>
+
+### Now Playing: 5-Line Synced Lyrics & 64-Band FFT Spectrum Visualizer
+Real-time 64-band hardware-accelerated spectrum analyzer alongside 5-line synchronized lyrics with live scaling slider:
+<p align="center">
+  <img src="Resources/screenshots/visualizer.png" alt="AudioFile Synced Lyrics and Spectrum Visualizer" width="100%">
+</p>
+
+### Adaptive Albums Grid View
+High-resolution album artwork covers with release year, track counts, and floating bottom player deck:
+<p align="center">
+  <img src="Resources/screenshots/albums.png" alt="AudioFile Albums Grid View" width="100%">
+</p>
 
 ---
 
@@ -54,10 +80,11 @@ curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/inst
 - **High-Resolution Track Dynamics Waveform Scrubber**:
   - Pre-calculates 512 amplitude dynamics bins in background worker tasks and caches waveforms on disk (`~/Library/Caches/AudioFile/waveforms/`).
   - Interactive seekbar in the floating bottom player deck with played vs. unplayed accent contrast and click/drag scrubbing.
-- **Hierarchical Library, Track Menus & Playlists**:
-  - **Artists (`⌘1`)**: 3-column macOS browser (**Artists → Albums → Songs**) with complete binary MP4/M4A (`trkn`/`disk`), ID3 (`TRCK`/`TPOS`), and filename-prefix track sorting.
+- **Hierarchical Library, Multi-Selection & Playlists**:
+  - **Artists (`⌘1`)**: 3-column macOS browser (**Artists → Albums → Songs**) with track and disc counts, favorite stars, and binary MP4/M4A, ID3, and filename-prefix sorting.
   - **Albums (`⌘2`)**: Adaptive album artwork grid with release year, track count, and Liquid Glass modal tracklist sheet.
-  - **Songs (`⌘3`)**: Native macOS sortable `Table` with single-click row selection, double-click playback, format pills, quality readout, favorite stars (`★`), and per-row kebab (`⋯`) menus.
+  - **Songs (`⌘3`)**: Native macOS sortable `Table` with single and multi-selection, double-click playback, format pills, quality readout, favorite stars (`★`), and per-row kebab (`⋯`) menus.
+  - **Multi-Selection & Batch Operations**: Select multiple tracks across Artists, Songs, Albums, or Playlists using **⌘-click**, **⇧-click**, or **⌘A**. Press **`F`** to batch-favorite all selected tracks, or use the context menu / `⋯` button to batch add to playlists, queue next, or reveal in Finder.
   - **Visualizer / Now Playing (`⌘4`)**: Hero view with album artwork, lossless format/bit-depth badge, adjustable 5-line synchronized lyrics card, and live 64-band FFT spectrum analyzer.
   - **Playlists (`⌘5` / `⌘6`)**: Built-in **★ Favorites**, **🕒 Recently Played**, and custom user playlists with a **Delete** action and destructive confirmation modal.
   - **Unified Context & Kebab (`⋯`) Menus**: Right-click any track or click its `⋯` button to **Play**, **Play Next**, **Favorite**, **Add to Playlist**, **Remove from Playlist**, or **Show in Finder**.
@@ -90,7 +117,9 @@ curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/inst
 | **Cycle Repeat Mode (Off / All / 1)** | `R` or click repeat button |
 | **Toggle Queue Shuffle** | `Z` or click shuffle button |
 | **Toggle Lyrics Card** | `L` or click **Lyrics** pill on Visualizer screen |
-| **Favorite Current Track** | `F` or click `★` |
+| **Favorite Track(s)** | `F` or click `★` (favorites selected track(s) or currently playing track) |
+| **Multi-Select Tracks** | `⌘-Click` individual tracks or `⇧-Click` track ranges |
+| **Select All Tracks** | `⌘A` in any track list or table |
 | **Global Search** | `⌘F` or click toolbar search field |
 | **Switch to Artists View** | `⌘1` |
 | **Switch to Albums View** | `⌘2` |

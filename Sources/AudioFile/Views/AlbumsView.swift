@@ -121,9 +121,9 @@ public struct AlbumsView: View {
 
                 // Tracklist
                 let trackList = vm.library.tracks(for: album.artist, album: album.title)
-                List(trackList, selection: $vm.selectedTrackId) { track in
+                List(trackList, selection: $vm.selectedTrackIds) { track in
                     let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                    let isSelected = (vm.selectedTrackId == track.id)
+                    let isSelected = vm.selectedTrackIds.contains(track.id)
 
                     HStack(spacing: 12) {
                         if let num = track.trackNumber {
@@ -138,9 +138,17 @@ public struct AlbumsView: View {
                                 .frame(width: 24, alignment: .trailing)
                         }
 
-                        Text(track.displayTitle)
-                            .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                            .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+                        HStack(spacing: 6) {
+                            Text(track.displayTitle)
+                                .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                                .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+
+                            if vm.playlists.isFavorite(trackId: track.id) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundStyle(isSelected ? Color.white.opacity(0.9) : Color.accentColor)
+                            }
+                        }
 
                         Spacer()
 
@@ -156,9 +164,9 @@ public struct AlbumsView: View {
                 }
                 .listStyle(.plain)
                 .contextMenu(forSelectionType: String.self) { selection in
-                    if let trackId = selection.first,
-                       let track = trackList.first(where: { $0.id == trackId }) {
-                        TrackMenuItems(vm: vm, track: track, trackList: trackList)
+                    let selectedTracks = trackList.filter { selection.contains($0.id) }
+                    if !selectedTracks.isEmpty {
+                        TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: trackList)
                     }
                 } primaryAction: { selection in
                     if let trackId = selection.first,
