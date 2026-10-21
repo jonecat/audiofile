@@ -71,7 +71,7 @@ public struct TrackMenuItems: View {
             } else {
                 ForEach(vm.playlists.playlists) { pl in
                     Button(pl.name) {
-                        vm.playlists.addTrack(to: pl.id, trackId: track.id)
+                        vm.addTrackToPlaylist(track: track, playlistId: pl.id)
                     }
                 }
             }
@@ -128,7 +128,7 @@ public struct TrackMenuItems: View {
             } else {
                 ForEach(vm.playlists.playlists) { pl in
                     Button(pl.name) {
-                        vm.playlists.addTracks(to: pl.id, trackIds: trackIds)
+                        vm.addTracksToPlaylist(trackIds: trackIds, playlistId: pl.id)
                     }
                 }
             }

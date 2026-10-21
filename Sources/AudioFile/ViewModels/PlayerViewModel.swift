@@ -123,6 +123,8 @@ public final class PlayerViewModel: ObservableObject {
     @Published public private(set) var sortedTracks: [Track] = []
 
     @Published public var currentWaveform: WaveformData?
+    @Published public var currentToast: ToastMessage?
+    private var toastDismissTask: Task<Void, Never>?
 
     public let audio = AudioEngine.shared
     public let library = LibraryManager.shared
@@ -455,12 +457,42 @@ public final class PlayerViewModel: ObservableObject {
         showVisualizer.toggle()
     }
 
+    // MARK: - Toast Notifications
+
+    public func showToast(icon: String, message: String, iconColor: Color? = nil) {
+        toastDismissTask?.cancel()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+            self.currentToast = ToastMessage(icon: icon, message: message, iconColor: iconColor)
+        }
+        toastDismissTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 2_500_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    self.currentToast = nil
+                }
+            }
+        }
+    }
+
     public func toggleFavorite(track: Track) {
+        let isFav = playlists.isFavorite(trackId: track.id)
         playlists.toggleFavorite(trackId: track.id)
+        if !isFav {
+            showToast(icon: "star.fill", message: "Added \"\(track.displayTitle)\" to Favorites", iconColor: .accentColor)
+        } else {
+            showToast(icon: "star", message: "Removed \"\(track.displayTitle)\" from Favorites", iconColor: .secondary)
+        }
     }
 
     public func toggleFavorite(trackId: String) {
+        let isFav = playlists.isFavorite(trackId: trackId)
         playlists.toggleFavorite(trackId: trackId)
+        let trackTitle = library.tracks.first(where: { $0.id == trackId })?.displayTitle ?? "Song"
+        if !isFav {
+            showToast(icon: "star.fill", message: "Added \"\(trackTitle)\" to Favorites", iconColor: .accentColor)
+        } else {
+            showToast(icon: "star", message: "Removed \"\(trackTitle)\" from Favorites", iconColor: .secondary)
+        }
     }
 
     public func toggleFavorite(trackIds: [String]) {
@@ -468,13 +500,39 @@ public final class PlayerViewModel: ObservableObject {
         let allFavs = trackIds.allSatisfy { playlists.isFavorite(trackId: $0) }
         if allFavs {
             playlists.removeFavorites(trackIds: trackIds)
+            if trackIds.count == 1, let firstId = trackIds.first {
+                let trackTitle = library.tracks.first(where: { $0.id == firstId })?.displayTitle ?? "Song"
+                showToast(icon: "star", message: "Removed \"\(trackTitle)\" from Favorites", iconColor: .secondary)
+            } else {
+                showToast(icon: "star", message: "Removed \(trackIds.count) songs from Favorites", iconColor: .secondary)
+            }
         } else {
             playlists.addFavorites(trackIds: trackIds)
+            if trackIds.count == 1, let firstId = trackIds.first {
+                let trackTitle = library.tracks.first(where: { $0.id == firstId })?.displayTitle ?? "Song"
+                showToast(icon: "star.fill", message: "Added \"\(trackTitle)\" to Favorites", iconColor: .accentColor)
+            } else {
+                showToast(icon: "star.fill", message: "Added \(trackIds.count) songs to Favorites", iconColor: .accentColor)
+            }
         }
     }
 
+    public func addTrackToPlaylist(track: Track, playlistId: String) {
+        playlists.addTrack(to: playlistId, trackId: track.id)
+        let playlistName = playlists.playlists.first(where: { $0.id == playlistId })?.name ?? "Playlist"
+        showToast(icon: "music.note.list", message: "Added \"\(track.displayTitle)\" to \(playlistName)", iconColor: .accentColor)
+    }
+
     public func addTracksToPlaylist(trackIds: [String], playlistId: String) {
+        guard !trackIds.isEmpty else { return }
         playlists.addTracks(to: playlistId, trackIds: trackIds)
+        let playlistName = playlists.playlists.first(where: { $0.id == playlistId })?.name ?? "Playlist"
+        if trackIds.count == 1, let firstId = trackIds.first {
+            let trackTitle = library.tracks.first(where: { $0.id == firstId })?.displayTitle ?? "Song"
+            showToast(icon: "music.note.list", message: "Added \"\(trackTitle)\" to \(playlistName)", iconColor: .accentColor)
+        } else {
+            showToast(icon: "music.note.list", message: "Added \(trackIds.count) songs to \(playlistName)", iconColor: .accentColor)
+        }
     }
 
     public func toggleFavoriteSelectedOrCurrentTrack() {

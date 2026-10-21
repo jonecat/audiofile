@@ -61,18 +61,21 @@ public struct AlbumsView: View {
         .sheet(item: $vm.selectedAlbumDetail) { album in
             VStack(spacing: 0) {
                 // Header with Album Art & Details
-                HStack(spacing: 20) {
+                HStack(alignment: .top, spacing: 20) {
                     ArtworkView(track: album.sampleTrack, cornerRadius: 10, shadowRadius: 6)
                         .frame(width: 120, height: 120)
 
                     VStack(alignment: .leading, spacing: 6) {
                         Text(album.title)
                             .font(.title2.weight(.bold))
+                            .lineLimit(2)
+                            .padding(.trailing, 32)
 
                         if !album.artist.isEmpty && UUID(uuidString: album.artist) == nil {
                             Text(album.artist)
                                 .font(.headline)
                                 .foregroundColor(.secondary)
+                                .lineLimit(1)
                         }
 
                         HStack(spacing: 8) {
@@ -101,20 +104,23 @@ public struct AlbumsView: View {
                     }
 
                     Spacer()
-
+                }
+                .padding(20)
+                .glassEffect(.regular, in: .rect(cornerRadius: 16))
+                .overlay(alignment: .topTrailing) {
                     Button {
                         vm.selectedAlbumDetail = nil
                     } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 12, weight: .bold))
-                            .frame(width: 24, height: 24)
+                            .font(.system(size: 11, weight: .bold))
+                            .frame(width: 26, height: 26)
                     }
                     .buttonStyle(.glass)
                     .buttonBorderShape(.circle)
-                    .help("Close Album Details")
+                    .keyboardShortcut(.cancelAction)
+                    .help("Close Album Details (Esc)")
+                    .padding(12)
                 }
-                .padding(20)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 .padding(.bottom, 8)

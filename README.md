@@ -85,8 +85,9 @@ High-resolution album artwork covers with release year, track counts, and floati
   - **Albums (`⌘2`)**: Adaptive album artwork grid with release year, track count, and Liquid Glass modal tracklist sheet.
   - **Songs (`⌘3`)**: Native macOS sortable `Table` with single and multi-selection, double-click playback, format pills, quality readout, favorite stars (`★`), and per-row kebab (`⋯`) menus.
   - **Multi-Selection & Batch Operations**: Select multiple tracks across Artists, Songs, Albums, or Playlists using **⌘-click**, **⇧-click**, or **⌘A**. Press **`F`** to batch-favorite all selected tracks, or use the context menu / `⋯` button to batch add to playlists, queue next, or reveal in Finder.
-  - **Visualizer / Now Playing (`⌘4`)**: Hero view with album artwork, lossless format/bit-depth badge, adjustable 5-line synchronized lyrics card, and live 64-band FFT spectrum analyzer.
-  - **Playlists (`⌘5` / `⌘6`)**: Built-in **★ Favorites**, **🕒 Recently Played**, and custom user playlists with a **Delete** action and destructive confirmation modal.
+  - **Visualizer / Now Playing (`⌘4`)**: Hero view with album artwork, format badge, adjustable 5-line synchronized lyrics, and live 64-band FFT spectrum analyzer. Click the album art to open a full-resolution artwork modal with embedded pixel dimensions (`px`).
+  - **Playlists (`⌘5` / `⌘6`)**: Built-in **★ Favorites**, **🕒 Recently Played**, and custom user playlists with tactile drag handles for animated drag-and-drop reordering.
+  - **Interactive Toast Notifications**: Floating Liquid Glass capsule pills provide instant feedback when favoriting or adding single/multiple songs to playlists.
   - **Unified Context & Kebab (`⋯`) Menus**: Right-click any track or click its `⋯` button to **Play**, **Play Next**, **Favorite**, **Add to Playlist**, **Remove from Playlist**, or **Show in Finder**.
   - **Settings (`⌘,`)**: Native macOS application menu integration (**AudioFile → Settings…**) with 5 Liquid Glass tabs (**Library**, **Audio**, **Visualizer**, **Lyrics**, and **About** specification table).
 - **Incremental Background Library Sync (NAS & Remote Friendly)**:
@@ -217,12 +218,15 @@ audiofile/
             ├── SettingsView.swift          # 5-tab Liquid Glass settings (Library, Audio, Visualizer, Lyrics, About)
             ├── AboutView.swift             # Stylized About AudioFile view with specs & repository links
             └── Components/
-                ├── FormatBadgeView.swift   # High-contrast Liquid Glass format badge pills (FLAC, ALAC, WAV, etc.)
-                ├── ArtworkView.swift       # Async album artwork loader with accent-tinted fallback
-                ├── SpectrumBarView.swift   # 64-band animated spectrum analyzer Canvas with accent gradient & peaks
-                ├── WaveformBarView.swift   # Interactive waveform seeker in the bottom player bar
-                ├── LyricsCardView.swift    # 5-line synchronized lyrics card with text/card size slider
-                └── TrackMenuView.swift     # Shared TrackMenuItems context menu & TrackKebabMenuButton (⋯)
+                ├── FormatBadgeView.swift        # High-contrast Liquid Glass format badge pills (FLAC, ALAC, WAV, etc.)
+                ├── ArtworkView.swift            # Async album artwork loader with accent-tinted fallback
+                ├── ArtworkDetailModalView.swift # Full-resolution album artwork inspector with pixel dimensions & Finder action
+                ├── DragHandleView.swift         # Tactile playlist drag handles with openHand cursor feedback
+                ├── ToastView.swift              # Liquid Glass floating toast notifications for favorites & playlists
+                ├── SpectrumBarView.swift        # 64-band animated spectrum analyzer Canvas with accent gradient & peaks
+                ├── WaveformBarView.swift        # Interactive waveform seeker in the bottom player bar
+                ├── LyricsCardView.swift         # 5-line synchronized lyrics card with text/card size slider
+                └── TrackMenuView.swift          # Shared TrackMenuItems context menu & TrackKebabMenuButton (⋯)
 ```
 
 ---

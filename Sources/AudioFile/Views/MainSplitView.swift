@@ -33,6 +33,22 @@ public struct MainSplitView: View {
                 // Floating Liquid Glass Bottom Player Deck
                 PlayerBarView(vm: vm)
             }
+            .overlay(alignment: .top) {
+                if let toast = vm.currentToast {
+                    ToastView(toast: toast)
+                        .padding(.top, 14)
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity
+                        ))
+                        .onTapGesture {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                vm.currentToast = nil
+                            }
+                        }
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.currentToast)
         }
         .searchable(text: $vm.searchQuery, prompt: "Search artists, albums, songs…")
         .toolbar {
