@@ -2,26 +2,47 @@ import SwiftUI
 
 public struct SidebarView: View {
     @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var library = LibraryManager.shared
     @ObservedObject var health = LibraryHealthManager.shared
+
+    public init(vm: PlayerViewModel) {
+        self.vm = vm
+    }
 
     public var body: some View {
         VStack(spacing: 0) {
             List(selection: $vm.selectedSection) {
                 Section("Library") {
                     NavigationLink(value: NavigationSection.artists) {
-                        Label("Artists", systemImage: "music.mic")
+                        HStack {
+                            Label("Artists", systemImage: "music.mic")
+                            Spacer()
+                            if !library.uniqueArtists.isEmpty {
+                                Text("\(library.uniqueArtists.count)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
 
                     NavigationLink(value: NavigationSection.albums) {
-                        Label("Albums", systemImage: "square.stack")
+                        HStack {
+                            Label("Albums", systemImage: "square.stack")
+                            Spacer()
+                            if !library.allAlbums.isEmpty {
+                                Text("\(library.allAlbums.count)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
                     }
 
                     NavigationLink(value: NavigationSection.songs) {
                         HStack {
                             Label("Songs", systemImage: "music.note")
                             Spacer()
-                            if !vm.library.tracks.isEmpty {
-                                Text("\(vm.library.tracks.count)")
+                            if !library.tracks.isEmpty {
+                                Text("\(library.tracks.count)")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
