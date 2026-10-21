@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 @MainActor
 public final class PlaylistManager: ObservableObject {
@@ -8,6 +9,25 @@ public final class PlaylistManager: ObservableObject {
     @Published public private(set) var playlists: [Playlist] = []
     @Published public private(set) var favorites: Set<String> = []
     @Published public private(set) var recentlyPlayed: [String] = []
+    @Published public var draggedPlaylist: Playlist?
+    @Published public var draggedTrack: Track?
+    @Published public var dropTargetPlaylistId: String?
+    @Published public var dropTargetTrackId: String?
+
+    public func clearDragState() {
+        draggedPlaylist = nil
+        draggedTrack = nil
+        dropTargetPlaylistId = nil
+        dropTargetTrackId = nil
+    }
+
+    public func cleanupDragIfMouseUp() {
+        if NSEvent.pressedMouseButtons == 0 {
+            if draggedPlaylist != nil || draggedTrack != nil || dropTargetPlaylistId != nil || dropTargetTrackId != nil {
+                clearDragState()
+            }
+        }
+    }
 
     private static var playlistsURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -116,6 +136,18 @@ public final class PlaylistManager: ObservableObject {
     public func deletePlaylist(id: String) {
         playlists.removeAll { $0.id == id }
         save()
+    }
+
+    public func movePlaylists(from source: IndexSet, to destination: Int) {
+        playlists.move(fromOffsets: source, toOffset: destination)
+        save()
+    }
+
+    public func moveTracks(in playlistId: String, from source: IndexSet, to destination: Int) {
+        if let idx = playlists.firstIndex(where: { $0.id == playlistId }) {
+            playlists[idx].trackIds.move(fromOffsets: source, toOffset: destination)
+            save()
+        }
     }
 
     public func renamePlaylist(id: String, newName: String) {

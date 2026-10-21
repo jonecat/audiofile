@@ -2,7 +2,7 @@
 
 > **High-Fidelity Native macOS Audiophile Music Player**  
 > Built with Swift 6, SwiftUI **Liquid Glass** (macOS 26+), AVFoundation, CoreAudio, and Accelerate (`vDSP`).  
-> Engineered to deliver complete audiophile parity with **OmaFLAC** in a native macOS Liquid Glass interface.
+> Engineered to deliver complete audiophile parity with [**OmaFLAC**](https://github.com/jonecat/omaflac) in a native macOS Liquid Glass interface.
 
 `AudioFile` is a native macOS audio player designed for audiophiles who demand bit-perfect lossless playback, high-resolution metadata, real-time 64-band FFT spectrum visualization, 5-line synchronized lyrics, and deep Apple ecosystem integration. Built with Apple's native **Liquid Glass** design system (`Glass`, `.glassEffect`, `GlassEffectContainer`, and `.glassEffectID`), every accented element dynamically adapts to your macOS **System Settings → Appearance** accent color.
 
@@ -236,7 +236,7 @@ audiofile/
 - `~/Library/Caches/AudioFile/waveforms/`: Cached 512-point track amplitude waveforms for instant loading.
 - `~/Library/Caches/AudioFile/lyrics/`: Cached synchronized `.lrc` lyrics for instant offline playback.
 
-*(Note: If migrating from `OmaFLAC`, `AudioFile` automatically detects and imports existing tracks and playlists from `~/.config/omaflac/` on first launch.)*
+*(Note: If migrating from [OmaFLAC](https://github.com/jonecat/omaflac), `AudioFile` automatically detects and imports existing tracks and playlists from `~/.config/omaflac/` on first launch.)*
 
 ---
 

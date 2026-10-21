@@ -50,32 +50,6 @@ public struct MainSplitView: View {
                 }
                 .disabled(vm.library.tracks.isEmpty && !vm.isLibraryShuffleActive)
                 .help(vm.isLibraryShuffleActive ? "Stop Continuous Library Shuffle" : "Continuously Shuffle Entire Library")
-
-                Button {
-                    library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
-                } label: {
-                    HStack(spacing: 6) {
-                        if library.isSyncing {
-                            ProgressView()
-                                .controlSize(.small)
-                            Text(library.isFullRescan ? "Rescanning…" : "Refreshing…")
-                        } else if library.syncCompletedMessage != nil {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(Color.green)
-                            Text("Synced!")
-                                .foregroundStyle(Color.green)
-                        } else {
-                            Image(systemName: "arrow.triangle.2.circlepath")
-                            Text("Refresh Library")
-                        }
-                    }
-                    .font(.system(size: 12, weight: .medium))
-                    .padding(.horizontal, 4)
-                    .animation(.easeInOut(duration: 0.2), value: library.isSyncing)
-                    .animation(.easeInOut(duration: 0.2), value: library.syncCompletedMessage)
-                }
-                .disabled(library.isSyncing)
-                .help("Refresh Library Folders")
             }
         }
         .sheet(isPresented: $vm.showingSettings) {

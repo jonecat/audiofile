@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 public struct PlaylistsView: View {
     @ObservedObject var vm: PlayerViewModel
@@ -83,12 +84,53 @@ public struct PlaylistsView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
+                let customPlaylistId: String? = {
+                    if case .playlist(let id) = section { return id }
+                    return nil
+                }()
+
                 List(selection: $vm.selectedTrackIds) {
                     ForEach(Array(currentTracks.enumerated()), id: \.element.id) { index, track in
                         let isPlaying = (vm.audio.currentTrack?.id == track.id)
                         let isSelected = vm.selectedTrackIds.contains(track.id)
+                        let isDragged = (vm.playlists.draggedTrack?.id == track.id)
+                        let isDropTarget = (vm.playlists.dropTargetTrackId == track.id && !isDragged)
 
                         HStack(spacing: 12) {
+                            if customPlaylistId != nil {
+                                DragHandleView(helpText: "Drag to reorder track in playlist")
+                                    .onDrag({
+                                        vm.playlists.draggedTrack = track
+                                        return NSItemProvider(object: track.id as NSString)
+                                    }) {
+                                        HStack(spacing: 10) {
+                                            Image(systemName: "music.note")
+                                                .foregroundColor(.accentColor)
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(track.displayTitle)
+                                                    .font(.system(size: 12, weight: .semibold))
+                                                    .foregroundColor(.primary)
+                                                    .lineLimit(1)
+                                                Text(track.displayArtist)
+                                                    .font(.system(size: 10))
+                                                    .foregroundColor(.secondary)
+                                                    .lineLimit(1)
+                                            }
+                                        }
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 6)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 8)
+                                                .fill(Color(nsColor: .windowBackgroundColor))
+                                                .overlay(
+                                                    RoundedRectangle(cornerRadius: 8)
+                                                        .stroke(Color.accentColor.opacity(0.6), lineWidth: 1.5)
+                                                )
+                                                .shadow(color: .black.opacity(0.3), radius: 6, x: 0, y: 3)
+                                        )
+                                    }
+                            }
+
                             Text("\(index + 1)")
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
@@ -133,12 +175,36 @@ public struct PlaylistsView: View {
                                 removeAction: removeClosure(at: index)
                             )
                         }
+                        .padding(.vertical, 2)
+                        .padding(.horizontal, 4)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                        .opacity(isDragged ? 0.35 : 1.0)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isDropTarget ? Color.accentColor.opacity(0.12) : Color.clear)
+                        )
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(isDropTarget ? Color.accentColor : Color.clear, lineWidth: 1.5)
+                        )
                         .contentShape(Rectangle())
                         .tag(track.id)
+                        .onDrop(of: [.text], delegate: TrackReorderDropDelegate(
+                            targetTrack: track,
+                            playlistId: customPlaylistId,
+                            playlists: vm.playlists
+                        ))
+                    }
+                    .onMove { indices, newOffset in
+                        if let id = customPlaylistId {
+                            vm.playlists.moveTracks(in: id, from: indices, to: newOffset)
+                        }
                     }
                 }
                 .listStyle(.plain)
+                .onHover { _ in
+                    vm.playlists.cleanupDragIfMouseUp()
+                }
                 .contextMenu(forSelectionType: String.self) { selection in
                     let selectedTracks = currentTracks.filter { selection.contains($0.id) }
                     if !selectedTracks.isEmpty {
@@ -218,5 +284,47 @@ public struct PlaylistsView: View {
         return {
             vm.playlists.removeTrack(from: playlistId, at: index)
         }
+    }
+}
+
+struct TrackReorderDropDelegate: DropDelegate {
+    let targetTrack: Track
+    let playlistId: String?
+    let playlists: PlaylistManager
+
+    func dropEntered(info: DropInfo) {
+        playlists.cleanupDragIfMouseUp()
+        guard let playlistId = playlistId,
+              let dragged = playlists.draggedTrack,
+              dragged.id != targetTrack.id else { return }
+
+        playlists.dropTargetTrackId = targetTrack.id
+
+        guard let plIdx = playlists.playlists.firstIndex(where: { $0.id == playlistId }),
+              let from = playlists.playlists[plIdx].trackIds.firstIndex(of: dragged.id),
+              let to = playlists.playlists[plIdx].trackIds.firstIndex(of: targetTrack.id)
+        else { return }
+
+        if from != to {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                playlists.moveTracks(in: playlistId, from: IndexSet(integer: from), to: (to > from ? to + 1 : to))
+            }
+        }
+    }
+
+    func dropExited(info: DropInfo) {
+        if playlists.dropTargetTrackId == targetTrack.id {
+            playlists.dropTargetTrackId = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        playlists.clearDragState()
+        return true
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        guard playlistId != nil else { return nil }
+        return DropProposal(operation: .move)
     }
 }
