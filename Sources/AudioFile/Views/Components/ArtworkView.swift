@@ -2,11 +2,13 @@ import SwiftUI
 import AppKit
 
 @MainActor
-final class ArtworkLoader: ObservableObject {
-    @Published var artwork: NSImage?
-    @Published var loadedTrackId: String?
+public final class ArtworkLoader: ObservableObject {
+    @Published public var artwork: NSImage?
+    @Published public var loadedTrackId: String?
 
-    func load(track: Track?) async {
+    public init() {}
+
+    public func load(track: Track?) async {
         guard let t = track else {
             artwork = nil
             loadedTrackId = nil

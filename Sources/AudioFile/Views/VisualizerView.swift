@@ -14,8 +14,34 @@ public struct VisualizerView: View {
                 if let track = audio.currentTrack {
                     // Top Section: Artwork & Track Info
                     HStack(alignment: .center, spacing: 20) {
-                        ArtworkView(track: track, cornerRadius: 10, shadowRadius: 6)
-                            .frame(width: artworkSize, height: artworkSize)
+                        Button {
+                            vm.inspectingArtworkTrack = track
+                        } label: {
+                            ZStack(alignment: .bottomTrailing) {
+                                ArtworkView(track: track, cornerRadius: 10, shadowRadius: 6)
+                                    .frame(width: artworkSize, height: artworkSize)
+
+                                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(Circle().fill(Color.black.opacity(0.6)))
+                                    .padding(5)
+                            }
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 10)
+                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                        .help("Click to view full album artwork")
+                        .onHover { inside in
+                            if inside {
+                                NSCursor.pointingHand.push()
+                            } else {
+                                NSCursor.pop()
+                            }
+                        }
 
                         VStack(alignment: .leading, spacing: 4) {
                             Text(track.displayTitle)
@@ -152,6 +178,9 @@ public struct VisualizerView: View {
                         .opacity(0.28)
                         .ignoresSafeArea()
                 }
+            }
+            .sheet(item: $vm.inspectingArtworkTrack) { track in
+                ArtworkDetailModalView(vm: vm, track: track)
             }
         }
     }

@@ -107,6 +107,7 @@ public final class PlayerViewModel: ObservableObject {
 
     // Track Metadata Inspector & Editor state
     @Published public var inspectingTrack: Track?
+    @Published public var inspectingArtworkTrack: Track?
     @Published public var metaTitle: String = ""
     @Published public var metaArtist: String = ""
     @Published public var metaAlbum: String = ""
