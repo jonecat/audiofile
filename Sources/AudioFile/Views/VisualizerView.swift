@@ -73,9 +73,7 @@ public struct VisualizerView: View {
                         GlassEffectContainer(spacing: 8) {
                             HStack(spacing: 8) {
                                 Button {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        vm.toggleLyrics()
-                                    }
+                                    vm.toggleLyrics()
                                 } label: {
                                     Label("Lyrics", systemImage: vm.showLyrics ? "quote.bubble.fill" : "quote.bubble")
                                         .font(.system(size: 12, weight: .semibold))
@@ -95,9 +93,7 @@ public struct VisualizerView: View {
                                 .help("Toggle Lyrics (L)")
 
                                 Button {
-                                    withAnimation(.easeInOut(duration: 0.2)) {
-                                        vm.toggleVisualizer()
-                                    }
+                                    vm.toggleVisualizer()
                                 } label: {
                                     Label("Visualizer", systemImage: "waveform")
                                         .font(.system(size: 12, weight: .semibold))
@@ -136,6 +132,7 @@ public struct VisualizerView: View {
                         .layoutPriority(vm.showVisualizer ? 0 : 1)
                         .padding(.horizontal, 24)
                         .padding(.bottom, vm.showVisualizer ? 0 : 12)
+                        .transition(.move(edge: .top).combined(with: .opacity))
                     }
 
                     // Responsive Real-Time Multi-Mode Visualizer (Toggleable, Isolated for 60/120 FPS performance)
@@ -145,6 +142,7 @@ public struct VisualizerView: View {
                             .layoutPriority(0)
                             .padding(.horizontal, 24)
                             .padding(.bottom, 12)
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     } else if !vm.showLyrics {
                         Spacer(minLength: 12)
                     }
@@ -160,6 +158,7 @@ public struct VisualizerView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .clipped()
             .background {
                 if let track = audio.currentTrack {
                     ArtworkView(track: track, cornerRadius: 0, shadowRadius: 0)

@@ -465,11 +465,15 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     public func toggleLyrics() {
-        showLyrics.toggle()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showLyrics.toggle()
+        }
     }
 
     public func toggleVisualizer() {
-        showVisualizer.toggle()
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showVisualizer.toggle()
+        }
     }
 
     public func cycleVisualizerMode() {
