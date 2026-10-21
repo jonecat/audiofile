@@ -103,7 +103,7 @@ public struct PlaylistsView: View {
                                     .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
                                     .lineLimit(1)
 
-                                Text(track.displayArtist + " — " + track.displayAlbum)
+                                Text(track.displayArtist + " • " + track.displayAlbum)
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                     .lineLimit(1)

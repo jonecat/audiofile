@@ -3,6 +3,7 @@ import AppKit
 
 public struct SettingsView: View {
     @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var library = LibraryManager.shared
     @Environment(\.dismiss) private var dismiss
     @Namespace private var tabNamespace
 
@@ -166,35 +167,56 @@ public struct SettingsView: View {
                 GlassEffectContainer(spacing: 10) {
                     HStack(spacing: 12) {
                         Button {
-                            vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
+                            library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
                         } label: {
-                            if vm.library.isSyncing {
-                                ProgressView()
-                                    .controlSize(.small)
-                                Text("Syncing…")
-                            } else {
-                                Label("Sync Library (Incremental)", systemImage: "arrow.triangle.2.circlepath")
+                            HStack(spacing: 6) {
+                                if library.isSyncing && !library.isFullRescan {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Syncing…")
+                                } else {
+                                    Label("Sync Library (Incremental)", systemImage: "arrow.triangle.2.circlepath")
+                                }
                             }
                         }
                         .buttonStyle(.glassProminent)
-                        .disabled(vm.library.isSyncing)
+                        .disabled(library.isSyncing)
                         .help("Scan library folders for new or modified audio files")
 
                         Button {
-                            vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: true)
+                            library.startSync(folders: vm.config.libraryFolders, fullRescan: true)
                         } label: {
-                            Label("Full Metadata Rescan", systemImage: "arrow.clockwise")
+                            HStack(spacing: 6) {
+                                if library.isSyncing && library.isFullRescan {
+                                    ProgressView()
+                                        .controlSize(.small)
+                                    Text("Rescanning Metadata…")
+                                } else {
+                                    Label("Full Metadata Rescan", systemImage: "arrow.clockwise")
+                                }
+                            }
                         }
                         .buttonStyle(.glass)
-                        .disabled(vm.library.isSyncing)
+                        .disabled(library.isSyncing)
                         .help("Re-read metadata tags for all audio files in your library")
 
-                        if !vm.library.syncStatusText.isEmpty {
-                            Text(vm.library.syncStatusText)
-                                .font(.system(size: 12))
-                                .foregroundColor(.secondary)
+                        if !library.syncStatusText.isEmpty {
+                            Text(library.syncStatusText)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(Color.accentColor)
+                        } else if let completedMsg = library.syncCompletedMessage {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(Color.green)
+                                Text(completedMsg)
+                                    .foregroundStyle(Color.green)
+                            }
+                            .font(.system(size: 12, weight: .semibold))
+                            .transition(.opacity)
                         }
                     }
+                    .animation(.easeInOut(duration: 0.2), value: library.isSyncing)
+                    .animation(.easeInOut(duration: 0.2), value: library.syncCompletedMessage)
                 }
             }
 
@@ -233,7 +255,7 @@ public struct SettingsView: View {
                     }
                     GridRow {
                         Text("Sample Rates:").foregroundColor(.secondary)
-                        Text("44.1 – 192 kHz PCM • 2.82 / 5.64 MHz DSD64/128")
+                        Text("44.1 to 192 kHz PCM • 2.82 / 5.64 MHz DSD64/128")
                     }
                     GridRow {
                         Text("Gapless Preload:").foregroundColor(.secondary)
@@ -299,7 +321,7 @@ public struct SettingsView: View {
                     }
                     GridRow {
                         Text("Frequency Range:").foregroundColor(.secondary)
-                        Text("20 Hz — 20,000 Hz (Logarithmic binning)")
+                        Text("20 Hz to 20,000 Hz (Logarithmic binning)")
                     }
                     GridRow {
                         Text("Window Function:").foregroundColor(.secondary)

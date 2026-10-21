@@ -40,7 +40,7 @@ curl -fsSL https://raw.githubusercontent.com/jonecat/audiofile/main/scripts/inst
   - **Continuous Library Shuffle (`⇧⌘S`)**: Top-toolbar **Shuffle Library** button shuffles your entire collection and automatically queues freshly shuffled passes as the queue nears completion so playback never stops until you stop it.
   - Software volume boost up to 150% and instant mute/unmute.
 - **Synchronized 5-Line Lyrics Engine**:
-  - **Multi-Stage LRCLIB Integration**: Fetches time-synchronized `.lrc` lyrics on-demand via [LRCLIB](https://lrclib.net) using exact `/api/get` matching, remaster/edition suffix stripping, and multi-stage `/api/search` fallback scored by artist, title, album, and track duration—with automatic retry/backoff on transient `503`/`429` responses.
+  - **Multi-Stage LRCLIB Integration**: Fetches time-synchronized `.lrc` lyrics on-demand via [LRCLIB](https://lrclib.net) using exact `/api/get` matching, remaster/edition suffix stripping, and multi-stage `/api/search` fallback scored by artist, title, album, and track duration, with automatic retry/backoff on transient `503`/`429` responses.
   - **Local Sidecar `.lrc` Priority**: Automatically detects and loads `<track>.lrc` files located alongside audio tracks in your library.
   - **Offline Disk Caching**: Saves fetched `.lrc` files locally (`~/Library/Caches/AudioFile/lyrics/`) for instant 0ms offline access without poisoning cache on transient network errors.
   - **5-Line Synchronized Window & Adjustable Text Size Slider**: Displays 2 previous lines, the active lyric line, and 2 upcoming lines, with a live **Text & Card Size Slider** (`0.85x–2.8x`) that dynamically expands the Lyrics card and scales the Spectrum Analyzer to fit.
@@ -213,5 +213,5 @@ audiofile/
 
 ## 👤 Author & License
 
-Created by **Jon Lawrence** — [https://github.com/jonecat/audiofile](https://github.com/jonecat/audiofile)  
+Created by **Jon Lawrence** - [https://github.com/jonecat/audiofile](https://github.com/jonecat/audiofile)  
 Released under the **MIT License**.

@@ -243,7 +243,7 @@ public struct MetadataReader: Sendable {
         return nil
     }
 
-    private static func hasFolderArtwork(in dir: URL) -> Bool {
+    public static func hasFolderArtwork(in dir: URL) -> Bool {
         let commonNames = ["cover.jpg", "cover.png", "cover.jpeg", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png"]
         for name in commonNames {
             if FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) {

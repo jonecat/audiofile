@@ -6,6 +6,7 @@ public enum NavigationSection: Hashable, Sendable {
     case artists
     case albums
     case songs
+    case health
     case visualizer
     case favorites
     case recentlyPlayed
@@ -100,6 +101,7 @@ public final class PlayerViewModel: ObservableObject {
 
     public let audio = AudioEngine.shared
     public let library = LibraryManager.shared
+    public let health = LibraryHealthManager.shared
     public let playlists = PlaylistManager.shared
     public let lyrics = LyricsManager.shared
     public let visualizer = VisualizerState.shared

@@ -9,7 +9,9 @@ public final class LibraryManager: ObservableObject {
     @Published public private(set) var uniqueArtists: [String] = []
     @Published public private(set) var allAlbums: [AlbumInfo] = []
     @Published public private(set) var isSyncing: Bool = false
+    @Published public private(set) var isFullRescan: Bool = false
     @Published public private(set) var syncStatusText: String = ""
+    @Published public private(set) var syncCompletedMessage: String?
 
     private static var libraryURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -105,6 +107,10 @@ public final class LibraryManager: ObservableObject {
                     }
                     modified = true
                 }
+                let savedOverrides = LibraryHealthManager.readOverridesFromDisk()
+                if savedOverrides[loaded[i].id] != nil {
+                    LibraryHealthManager.applyOverride(from: savedOverrides, to: &loaded[i])
+                }
             }
             self.tracks = loaded
             sortTracks()
@@ -191,9 +197,18 @@ public final class LibraryManager: ObservableObject {
     public func startSync(folders: [URL], fullRescan: Bool = false) {
         guard !isSyncing else { return }
         isSyncing = true
-        syncStatusText = "Scanning folders..."
+        isFullRescan = fullRescan
+        syncCompletedMessage = nil
+        syncStatusText = fullRescan ? "Rescanning all metadata…" : "Scanning folders…"
+
+        if fullRescan {
+            LibraryHealthManager.shared.clearAllOverridesAndIgnored()
+        }
+
+        let startInstant = ContinuousClock.now
 
         Task.detached(priority: .utility) {
+            let savedOverrides = fullRescan ? [:] : LibraryHealthManager.readOverridesFromDisk()
             var existingMap: [String: Track] = [:]
             if !fullRescan {
                 for track in await self.tracks {
@@ -221,13 +236,16 @@ public final class LibraryManager: ObservableObject {
                     let fileValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
                     let curSize = fileValues?.fileSize.map { UInt64($0) }
                     let curDate = fileValues?.contentModificationDate
+                    let folderHasArt = MetadataReader.hasFolderArtwork(in: fileURL.deletingLastPathComponent())
 
                     if !fullRescan, let existing = existingMap[filePath],
                        existing.fileSize == curSize,
                        existing.modifiedDate == curDate,
                        existing.trackNumber != nil,
                        (existing.sampleRate ?? 44100) >= 8000,
-                       existing.duration > 0 && existing.duration < 86_400 {
+                       existing.duration > 0 && existing.duration < 86_400,
+                       savedOverrides[existing.id] == nil,
+                       (!existing.hasCoverArt || folderHasArt) {
                         // Unmodified file with complete track metadata, preserve cached track metadata!
                         discoveredTracks.append(existing)
                     } else {
@@ -240,20 +258,61 @@ public final class LibraryManager: ObservableObject {
                     if checkedCount % 25 == 0 {
                         let count = discoveredTracks.count
                         await MainActor.run {
-                            self.syncStatusText = "Found \(count) tracks..."
+                            self.syncStatusText = fullRescan
+                                ? "Rescanned \(count) tracks…"
+                                : "Checked \(count) tracks…"
                         }
                     }
                 }
             }
 
+            // Ensure visual feedback animation stays visible for at least 600ms even on fast SSDs
+            let elapsed = ContinuousClock.now - startInstant
+            if elapsed < .milliseconds(600) {
+                try? await Task.sleep(for: .milliseconds(600) - elapsed)
+            }
+
             await MainActor.run {
+                if !fullRescan {
+                    for i in discoveredTracks.indices {
+                        LibraryHealthManager.applyOverride(from: savedOverrides, to: &discoveredTracks[i])
+                    }
+                }
                 self.tracks = discoveredTracks
                 self.sortTracks()
                 self.saveLibrary()
                 self.isSyncing = false
+                self.isFullRescan = false
                 self.syncStatusText = ""
+                let msg = fullRescan
+                    ? "Full rescan complete (\(discoveredTracks.count) tracks)"
+                    : "Synced \(discoveredTracks.count) tracks"
+                self.syncCompletedMessage = msg
+
+                Task { @MainActor in
+                    try? await Task.sleep(for: .seconds(3))
+                    if self.syncCompletedMessage == msg {
+                        self.syncCompletedMessage = nil
+                    }
+                }
             }
         }
+    }
+
+    public func applyHealthOverrides(using overrides: [String: TrackMetadataOverride]) {
+        var updated = tracks
+        for i in updated.indices {
+            LibraryHealthManager.applyOverride(from: overrides, to: &updated[i])
+        }
+        self.tracks = updated
+        sortTracks()
+        saveLibrary()
+    }
+
+    public func removeTrack(id: String) {
+        tracks.removeAll { $0.id == id }
+        sortTracks()
+        saveLibrary()
     }
 
 

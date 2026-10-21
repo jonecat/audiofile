@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct SidebarView: View {
     @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var health = LibraryHealthManager.shared
 
     public var body: some View {
         VStack(spacing: 0) {
@@ -23,6 +24,24 @@ public struct SidebarView: View {
                                 Text("\(vm.library.tracks.count)")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    NavigationLink(value: NavigationSection.health) {
+                        HStack {
+                            Label("Health", systemImage: "waveform.path.ecg")
+                            Spacer()
+                            let badgeCount = health.totalIssuesBadgeCount
+                            if badgeCount > 0 {
+                                Text("\(badgeCount)")
+                                    .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                    .foregroundStyle(Color.white)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 1)
+                                    .background(
+                                        Capsule().fill(Color.accentColor.opacity(0.85))
+                                    )
                             }
                         }
                     }

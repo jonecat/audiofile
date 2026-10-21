@@ -201,6 +201,11 @@ struct AudioFileApp: App {
                 }
                 .keyboardShortcut("4", modifiers: .command)
 
+                Button("Library Health") {
+                    vm.selectedSection = .health
+                }
+                .keyboardShortcut("5", modifiers: .command)
+
                 Button("Favorites") {
                     vm.selectedSection = .favorites
                 }

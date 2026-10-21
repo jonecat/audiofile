@@ -132,7 +132,7 @@ public struct AlbumsView: View {
                                 .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                 .frame(width: 24, alignment: .trailing)
                         } else {
-                            Text("—")
+                            Text("-")
                                 .font(.system(size: 12))
                                 .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                 .frame(width: 24, alignment: .trailing)

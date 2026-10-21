@@ -161,7 +161,7 @@ public struct ArtistsView: View {
                                     .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                     .frame(width: 24, alignment: .trailing)
                             } else {
-                                Text("—")
+                                Text("-")
                                     .font(.system(size: 11))
                                     .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                     .frame(width: 24, alignment: .trailing)
