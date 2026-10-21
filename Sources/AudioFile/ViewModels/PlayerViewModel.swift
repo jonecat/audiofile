@@ -126,6 +126,10 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var currentToast: ToastMessage?
     private var toastDismissTask: Task<Void, Never>?
 
+    // Resizable Columns state
+    @Published public var artistsColumnWidth: CGFloat = 220
+    @Published public var albumsColumnWidth: CGFloat = 250
+
     public let audio = AudioEngine.shared
     public let library = LibraryManager.shared
     public let health = LibraryHealthManager.shared
@@ -148,6 +152,8 @@ public final class PlayerViewModel: ObservableObject {
         self.showVisualizer = config.showVisualizer
         self.lyricsScale = config.lyricsScale
         self.audio.volume = config.volume
+        self.artistsColumnWidth = CGFloat(config.artistsColumnWidth)
+        self.albumsColumnWidth = CGFloat(config.albumsColumnWidth)
 
         VisualizerEngine.shared.setFPS(Double(config.visualizerFPS))
         VisualizerState.shared.start(fps: config.visualizerFPS)
@@ -546,6 +552,54 @@ public final class PlayerViewModel: ObservableObject {
     public var isCurrentTrackFavorite: Bool {
         guard let track = audio.currentTrack else { return false }
         return playlists.isFavorite(trackId: track.id)
+    }
+
+    // MARK: - Resizable Columns
+
+    private var dragStartArtistsWidth: CGFloat = 220
+    private var isDraggingArtistsColumn: Bool = false
+
+    public func handleArtistsDrag(translation: CGFloat, isEnded: Bool = false) {
+        if !isDraggingArtistsColumn {
+            isDraggingArtistsColumn = true
+            dragStartArtistsWidth = artistsColumnWidth
+        }
+        let target = dragStartArtistsWidth + translation
+        artistsColumnWidth = min(max(target, 140), 550)
+        if isEnded {
+            isDraggingArtistsColumn = false
+            config.artistsColumnWidth = Double(artistsColumnWidth)
+            config.save()
+        }
+    }
+
+    public func resetArtistsColumnWidth() {
+        artistsColumnWidth = 220
+        config.artistsColumnWidth = 220
+        config.save()
+    }
+
+    private var dragStartAlbumsWidth: CGFloat = 250
+    private var isDraggingAlbumsColumn: Bool = false
+
+    public func handleAlbumsDrag(translation: CGFloat, isEnded: Bool = false) {
+        if !isDraggingAlbumsColumn {
+            isDraggingAlbumsColumn = true
+            dragStartAlbumsWidth = albumsColumnWidth
+        }
+        let target = dragStartAlbumsWidth + translation
+        albumsColumnWidth = min(max(target, 160), 650)
+        if isEnded {
+            isDraggingAlbumsColumn = false
+            config.albumsColumnWidth = Double(albumsColumnWidth)
+            config.save()
+        }
+    }
+
+    public func resetAlbumsColumnWidth() {
+        albumsColumnWidth = 250
+        config.albumsColumnWidth = 250
+        config.save()
     }
 
     // MARK: - Track Metadata Inspector & Editor

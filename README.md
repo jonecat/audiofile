@@ -81,7 +81,7 @@ High-resolution album artwork covers with release year, track counts, and floati
   - Pre-calculates 512 amplitude dynamics bins in background worker tasks and caches waveforms on disk (`~/Library/Caches/AudioFile/waveforms/`).
   - Interactive seekbar in the floating bottom player deck with played vs. unplayed accent contrast and click/drag scrubbing.
 - **Hierarchical Library, Multi-Selection & Playlists**:
-  - **Artists (`⌘1`)**: 3-column macOS browser (**Artists → Albums → Songs**) with track and disc counts, favorite stars, and binary MP4/M4A, ID3, and filename-prefix sorting.
+  - **Artists (`⌘1`)**: 3-column macOS browser (**Artists → Albums → Songs**) with draggable horizontal column dividers, track and disc counts, favorite stars, and binary MP4/M4A, ID3, and filename-prefix sorting.
   - **Albums (`⌘2`)**: Adaptive album artwork grid with release year, track count, and Liquid Glass modal tracklist sheet.
   - **Songs (`⌘3`)**: Native macOS sortable `Table` with single and multi-selection, double-click playback, format pills, quality readout, favorite stars (`★`), and per-row kebab (`⋯`) menus.
   - **Multi-Selection & Batch Operations**: Select multiple tracks across Artists, Songs, Albums, or Playlists using **⌘-click**, **⇧-click**, or **⌘A**. Press **`F`** to batch-favorite all selected tracks, or use the context menu / `⋯` button to batch add to playlists, queue next, or reveal in Finder.
@@ -222,6 +222,7 @@ audiofile/
                 ├── ArtworkView.swift            # Async album artwork loader with accent-tinted fallback
                 ├── ArtworkDetailModalView.swift # Full-resolution album artwork inspector with pixel dimensions & Finder action
                 ├── DragHandleView.swift         # Tactile playlist drag handles with openHand cursor feedback
+                ├── ColumnDividerView.swift      # Draggable horizontal split dividers with resize cursor & double-click reset
                 ├── ToastView.swift              # Liquid Glass floating toast notifications for favorites & playlists
                 ├── SpectrumBarView.swift        # 64-band animated spectrum analyzer Canvas with accent gradient & peaks
                 ├── WaveformBarView.swift        # Interactive waveform seeker in the bottom player bar

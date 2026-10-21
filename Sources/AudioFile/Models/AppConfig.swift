@@ -32,6 +32,8 @@ public struct AppConfig: Codable, Sendable {
     public var showVisualizer: Bool
     public var lyricsScale: Double
     public var autoFetchLyrics: Bool
+    public var artistsColumnWidth: Double
+    public var albumsColumnWidth: Double
 
     public init(
         libraryFolders: [URL] = AppConfig.defaultFolders(),
@@ -42,7 +44,9 @@ public struct AppConfig: Codable, Sendable {
         showLyrics: Bool = true,
         showVisualizer: Bool = true,
         lyricsScale: Double = 1.0,
-        autoFetchLyrics: Bool = true
+        autoFetchLyrics: Bool = true,
+        artistsColumnWidth: Double = 220.0,
+        albumsColumnWidth: Double = 250.0
     ) {
         self.libraryFolders = libraryFolders
         self.volume = volume
@@ -53,6 +57,8 @@ public struct AppConfig: Codable, Sendable {
         self.showVisualizer = showVisualizer
         self.lyricsScale = lyricsScale
         self.autoFetchLyrics = autoFetchLyrics
+        self.artistsColumnWidth = artistsColumnWidth
+        self.albumsColumnWidth = albumsColumnWidth
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,6 +72,8 @@ public struct AppConfig: Codable, Sendable {
         self.showVisualizer = try container.decodeIfPresent(Bool.self, forKey: .showVisualizer) ?? true
         self.lyricsScale = try container.decodeIfPresent(Double.self, forKey: .lyricsScale) ?? 1.0
         self.autoFetchLyrics = try container.decodeIfPresent(Bool.self, forKey: .autoFetchLyrics) ?? true
+        self.artistsColumnWidth = try container.decodeIfPresent(Double.self, forKey: .artistsColumnWidth) ?? 220.0
+        self.albumsColumnWidth = try container.decodeIfPresent(Double.self, forKey: .albumsColumnWidth) ?? 250.0
     }
 
     public static func defaultFolders() -> [URL] {

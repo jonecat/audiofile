@@ -45,9 +45,19 @@ public struct ArtistsView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .frame(minWidth: 180, idealWidth: 220, maxWidth: 265, maxHeight: .infinity, alignment: .topLeading)
+            .frame(width: vm.artistsColumnWidth)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
 
-            Divider()
+            ColumnDividerView(
+                onDragChange: { translation, isEnded in
+                    vm.handleArtistsDrag(translation: translation, isEnded: isEnded)
+                },
+                onDoubleClick: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        vm.resetArtistsColumnWidth()
+                    }
+                }
+            )
 
             // Column 2: Albums
             VStack(alignment: .leading, spacing: 0) {
@@ -115,9 +125,19 @@ public struct ArtistsView: View {
                 }
             }
             .padding(.horizontal, 8)
-            .frame(minWidth: 200, idealWidth: 245, maxWidth: 310, maxHeight: .infinity, alignment: .topLeading)
+            .frame(width: vm.albumsColumnWidth)
+            .frame(maxHeight: .infinity, alignment: .topLeading)
 
-            Divider()
+            ColumnDividerView(
+                onDragChange: { translation, isEnded in
+                    vm.handleAlbumsDrag(translation: translation, isEnded: isEnded)
+                },
+                onDoubleClick: {
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) {
+                        vm.resetAlbumsColumnWidth()
+                    }
+                }
+            )
 
             // Column 3: Songs
             VStack(alignment: .leading, spacing: 0) {
