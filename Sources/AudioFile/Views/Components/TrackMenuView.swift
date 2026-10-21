@@ -60,6 +60,10 @@ public struct TrackMenuItems: View {
 
         Divider()
 
+        Button("View / Edit Metadata…") {
+            vm.beginInspectingMetadata(for: track)
+        }
+
         Button("Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([track.path])
         }

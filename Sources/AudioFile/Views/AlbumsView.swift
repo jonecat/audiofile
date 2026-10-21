@@ -168,6 +168,9 @@ public struct AlbumsView: View {
                 }
             }
             .frame(width: 540, height: 480)
+            .sheet(item: $vm.inspectingTrack) { inspectedTrack in
+                TrackMetadataSheetView(vm: vm, track: inspectedTrack)
+            }
         }
     }
 

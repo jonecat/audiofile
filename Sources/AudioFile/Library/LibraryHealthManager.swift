@@ -817,6 +817,39 @@ public final class LibraryHealthManager: ObservableObject {
         analyzeLibrary()
     }
 
+    // MARK: - Single Track Metadata Inspector & Editor Save
+
+    public func saveSingleTrackMetadata(
+        track: Track,
+        override: TrackMetadataOverride,
+        mode: HealthFixMode
+    ) async {
+        var merged = overrides[track.id] ?? TrackMetadataOverride()
+        if let t = override.title { merged.title = t }
+        if let a = override.artist { merged.artist = a }
+        if let al = override.album { merged.album = al }
+        if let aa = override.albumArtist { merged.albumArtist = aa }
+        merged.trackNumber = override.trackNumber
+        merged.discNumber = override.discNumber
+        merged.year = override.year
+        if let g = override.genre { merged.genre = g }
+        overrides[track.id] = merged
+
+        if mode == .writeToAudioFiles {
+            await Self.writeTagsToAudioFile(track: track, override: merged)
+        }
+
+        saveOverrides()
+        LibraryManager.shared.applyHealthOverrides(using: overrides)
+
+        if AudioEngine.shared.currentTrack?.id == track.id,
+           let updatedTrack = LibraryManager.shared.tracks.first(where: { $0.id == track.id }) {
+            AudioEngine.shared.updateCurrentTrackMetadata(updatedTrack)
+        }
+
+        analyzeLibrary()
+    }
+
     // MARK: - Edit Proposed Metadata Fix
 
     public func beginEditing(_ issue: HealthIssue) {
@@ -969,6 +1002,7 @@ public final class LibraryHealthManager: ObservableObject {
         if let al = override.album, !al.isEmpty { args += ["-metadata", "album=\(al)"] }
         if let aa = override.albumArtist, !aa.isEmpty { args += ["-metadata", "album_artist=\(aa)"] }
         if let tn = override.trackNumber { args += ["-metadata", "track=\(tn)"] }
+        if let dn = override.discNumber { args += ["-metadata", "disc=\(dn)"] }
         if let y = override.year { args += ["-metadata", "date=\(y)"] }
         if let g = override.genre, !g.isEmpty { args += ["-metadata", "genre=\(g)"] }
         args.append(tempURL.path)

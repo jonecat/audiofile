@@ -81,6 +81,16 @@ public struct MainSplitView: View {
         .sheet(isPresented: $vm.showingSettings) {
             SettingsView(vm: vm)
         }
+        .sheet(
+            isPresented: Binding(
+                get: { vm.inspectingTrack != nil && vm.selectedAlbumDetail == nil },
+                set: { if !$0 { vm.inspectingTrack = nil } }
+            )
+        ) {
+            if let track = vm.inspectingTrack {
+                TrackMetadataSheetView(vm: vm, track: track)
+            }
+        }
         .sheet(isPresented: $updater.isInstallingUpdate) {
             VStack(spacing: 16) {
                 ProgressView()

@@ -31,18 +31,19 @@ mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 
 echo "Copying binary..."
-cp "${ROOT_DIR}/.build/release/AudioFile" "${MACOS_DIR}/AudioFile"
+cp -X "${ROOT_DIR}/.build/release/AudioFile" "${MACOS_DIR}/AudioFile"
 chmod +x "${MACOS_DIR}/AudioFile"
 
 echo "Copying metadata & resources..."
-cp "${ROOT_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
+cp -X "${ROOT_DIR}/Resources/Info.plist" "${CONTENTS_DIR}/Info.plist"
 
 if [ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]; then
-    cp "${ROOT_DIR}/Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
+    cp -X "${ROOT_DIR}/Resources/AppIcon.icns" "${RESOURCES_DIR}/AppIcon.icns"
 fi
 
 echo "Signing application ad-hoc..."
-xattr -cr "${APP_DIR}"
+dot_clean -m "${APP_DIR}" 2>/dev/null || true
+xattr -cr "${APP_DIR}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_DIR}"
 
 echo "Packaging release archive AudioFile.app.zip..."

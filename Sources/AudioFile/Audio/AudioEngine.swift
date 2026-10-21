@@ -320,6 +320,12 @@ public final class AudioEngine: ObservableObject {
         }
     }
 
+    public func updateCurrentTrackMetadata(_ updatedTrack: Track) {
+        guard currentTrack?.id == updatedTrack.id else { return }
+        currentTrack = updatedTrack
+        updateNowPlayingInfo()
+    }
+
     private func updateNowPlayingInfo() {
         guard let track = currentTrack else {
             MPNowPlayingInfoCenter.default().nowPlayingInfo = nil

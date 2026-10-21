@@ -94,6 +94,19 @@ public final class PlayerViewModel: ObservableObject {
     ]
     @Published public var showingCacheClearedAlert: Bool = false
 
+    // Track Metadata Inspector & Editor state
+    @Published public var inspectingTrack: Track?
+    @Published public var metaTitle: String = ""
+    @Published public var metaArtist: String = ""
+    @Published public var metaAlbum: String = ""
+    @Published public var metaAlbumArtist: String = ""
+    @Published public var metaGenre: String = ""
+    @Published public var metaTrackNumber: String = ""
+    @Published public var metaDiscNumber: String = ""
+    @Published public var metaYear: String = ""
+    @Published public var metaSaveMode: HealthFixMode = .safeLibraryAndSidecar
+    @Published public var isSavingTrackMetadata: Bool = false
+
     @Published public private(set) var filteredTracks: [Track] = []
     @Published public private(set) var sortedTracks: [Track] = []
 
@@ -429,6 +442,65 @@ public final class PlayerViewModel: ObservableObject {
     public var isCurrentTrackFavorite: Bool {
         guard let track = audio.currentTrack else { return false }
         return playlists.isFavorite(trackId: track.id)
+    }
+
+    // MARK: - Track Metadata Inspector & Editor
+
+    public func beginInspectingMetadata(for track: Track) {
+        let current = library.tracks.first(where: { $0.id == track.id }) ?? track
+        metaTitle = current.displayTitle
+        metaArtist = current.artist == "Unknown Artist" ? "" : current.displayArtist
+        metaAlbum = current.album == "Unknown Album" ? "" : current.displayAlbum
+        metaAlbumArtist = current.albumArtist ?? current.displayAlbumArtist
+        metaGenre = current.genre ?? ""
+        metaTrackNumber = current.trackNumber.map { String($0) } ?? ""
+        metaDiscNumber = current.discNumber.map { String($0) } ?? ""
+        metaYear = current.year.map { String($0) } ?? ""
+        metaSaveMode = health.fixMode
+        isSavingTrackMetadata = false
+        inspectingTrack = current
+    }
+
+    public func saveInspectedTrackMetadata() {
+        guard let track = inspectingTrack else { return }
+        isSavingTrackMetadata = true
+
+        let override = TrackMetadataOverride(
+            title: metaTitle.trimmingCharacters(in: .whitespacesAndNewlines),
+            artist: metaArtist.trimmingCharacters(in: .whitespacesAndNewlines),
+            album: metaAlbum.trimmingCharacters(in: .whitespacesAndNewlines),
+            albumArtist: metaAlbumArtist.trimmingCharacters(in: .whitespacesAndNewlines),
+            trackNumber: Int(metaTrackNumber.trimmingCharacters(in: .whitespaces)),
+            discNumber: Int(metaDiscNumber.trimmingCharacters(in: .whitespaces)),
+            year: Int(metaYear.trimmingCharacters(in: .whitespaces)),
+            genre: metaGenre.trimmingCharacters(in: .whitespacesAndNewlines)
+        )
+
+        Task { @MainActor in
+            await health.saveSingleTrackMetadata(
+                track: track,
+                override: override,
+                mode: metaSaveMode
+            )
+            if let updated = library.tracks.first(where: { $0.id == track.id }) {
+                for i in queue.indices where queue[i].id == track.id {
+                    queue[i] = updated
+                }
+                for i in originalQueue.indices where originalQueue[i].id == track.id {
+                    originalQueue[i] = updated
+                }
+                if selectedAlbumDetail != nil {
+                    selectedAlbumDetail = library.allAlbums.first(where: {
+                        $0.title == updated.displayAlbum && $0.artist == updated.displayAlbumArtist
+                    }) ?? selectedAlbumDetail
+                }
+                if let currentArtist = selectedArtist, !library.uniqueArtists.contains(currentArtist) {
+                    selectedArtist = updated.displayArtist
+                }
+            }
+            isSavingTrackMetadata = false
+            inspectingTrack = nil
+        }
     }
 
     // MARK: - Search Filtering & Sorting
