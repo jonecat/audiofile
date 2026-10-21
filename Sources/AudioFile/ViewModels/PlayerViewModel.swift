@@ -71,6 +71,13 @@ public final class PlayerViewModel: ObservableObject {
             config.save()
         }
     }
+    @Published public var visualizerMode: VisualizerMode = .bars {
+        didSet {
+            config.visualizerMode = visualizerMode
+            config.save()
+            visualizer.setMode(visualizerMode)
+        }
+    }
     @Published public var lyricsScale: Double = 1.0 {
         didSet {
             config.lyricsScale = lyricsScale
@@ -150,6 +157,8 @@ public final class PlayerViewModel: ObservableObject {
         self.config.save()
         self.showLyrics = config.showLyrics
         self.showVisualizer = config.showVisualizer
+        self.visualizerMode = config.visualizerMode
+        self.visualizer.setMode(config.visualizerMode)
         self.lyricsScale = config.lyricsScale
         self.audio.volume = config.volume
         self.artistsColumnWidth = CGFloat(config.artistsColumnWidth)
@@ -461,6 +470,15 @@ public final class PlayerViewModel: ObservableObject {
 
     public func toggleVisualizer() {
         showVisualizer.toggle()
+    }
+
+    public func cycleVisualizerMode() {
+        visualizerMode = visualizerMode.next
+        showToast(icon: visualizerMode.systemImage, message: visualizerMode.rawValue)
+    }
+
+    public func setVisualizerMode(_ mode: VisualizerMode) {
+        visualizerMode = mode
     }
 
     // MARK: - Toast Notifications

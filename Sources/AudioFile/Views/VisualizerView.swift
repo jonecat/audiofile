@@ -3,7 +3,6 @@ import SwiftUI
 public struct VisualizerView: View {
     @ObservedObject var vm: PlayerViewModel
     @ObservedObject var audio = AudioEngine.shared
-    @ObservedObject var visualizer = VisualizerState.shared
 
     public var body: some View {
         GeometryReader { geometry in
@@ -133,29 +132,13 @@ public struct VisualizerView: View {
                         .padding(.horizontal, 24)
                     }
 
-                    // Responsive Real-Time 64-Band FFT Spectrum Analyzer (Toggleable)
+                    // Responsive Real-Time Multi-Mode Visualizer (Toggleable, Isolated for 60/120 FPS performance)
                     if vm.showVisualizer {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack {
-                                Label("Spectrum Analyzer", systemImage: "waveform.path")
-                                    .font(.system(size: 11, weight: .bold))
-                                    .foregroundColor(.secondary)
-                                    .textCase(.uppercase)
-                                Spacer()
-                                Text("64 Bands • \(vm.config.visualizerFPS) FPS")
-                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-
-                            SpectrumBarView(bands: visualizer.bands, peaks: visualizer.peaks)
-                                .frame(maxWidth: .infinity, minHeight: 40, maxHeight: .infinity)
-                                .padding(14)
-                                .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                        }
-                        .frame(maxWidth: .infinity, minHeight: 60, maxHeight: .infinity)
-                        .layoutPriority(0)
-                        .padding(.horizontal, 24)
-                        .padding(.bottom, 12)
+                        VisualizerCardContainer(vm: vm)
+                            .frame(maxWidth: .infinity, minHeight: 60, maxHeight: .infinity)
+                            .layoutPriority(0)
+                            .padding(.horizontal, 24)
+                            .padding(.bottom, 12)
                     } else {
                         Spacer(minLength: 12)
                     }
@@ -182,6 +165,88 @@ public struct VisualizerView: View {
             .sheet(item: $vm.inspectingArtworkTrack) { track in
                 ArtworkDetailModalView(vm: vm, track: track)
             }
+        }
+    }
+}
+
+// MARK: - Isolated Visualizer Container (Updates at 60/120 FPS without invalidating parent views)
+
+private struct VisualizerCardContainer: View {
+    @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var visualizer = VisualizerState.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Menu {
+                    ForEach(VisualizerMode.allCases) { mode in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                vm.setVisualizerMode(mode)
+                            }
+                        } label: {
+                            Label(mode.rawValue, systemImage: mode.systemImage)
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: vm.visualizerMode.systemImage)
+                            .foregroundColor(.accentColor)
+                        Text(vm.visualizerMode.rawValue.uppercased())
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                            .foregroundColor(.secondary.opacity(0.6))
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("Switch visualizer mode (click visualization to cycle)")
+
+                Spacer()
+
+                Text(modeSubtitle)
+                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                    .foregroundColor(.secondary)
+            }
+
+            ZStack {
+                switch vm.visualizerMode {
+                case .bars:
+                    SpectrumBarView(bands: visualizer.bands, peaks: visualizer.peaks)
+                case .vuMeter:
+                    DualVUMeterView(
+                        left: visualizer.vuLeft,
+                        right: visualizer.vuRight,
+                        leftPeak: visualizer.vuLeftPeak,
+                        rightPeak: visualizer.vuRightPeak
+                    )
+                case .circular:
+                    CircularSpectrumView(bands: visualizer.bands, peaks: visualizer.peaks)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 40, maxHeight: .infinity)
+            .padding(14)
+            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .contentShape(Rectangle())
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    vm.cycleVisualizerMode()
+                }
+            }
+            .help("Click to switch to \(vm.visualizerMode.next.rawValue)")
+        }
+    }
+
+    private var modeSubtitle: String {
+        switch vm.visualizerMode {
+        case .bars:
+            return "64 Bands • \(vm.config.visualizerFPS) FPS"
+        case .vuMeter:
+            return "Stereo Ballistics • 300ms Rise"
+        case .circular:
+            return "Radial FFT • \(vm.config.visualizerFPS) FPS"
         }
     }
 }

@@ -281,10 +281,31 @@ public struct SettingsView: View {
     private var visualizerTab: some View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Spectrum Visualizer")
+                Text("Audio Visualizer")
                     .font(.title3.weight(.bold))
-                Text("Real-time 64-band Fast Fourier Transform (FFT) frequency spectrum analyzer.")
+                Text("Real-time DSP-driven visualizers powered by Apple Accelerate (vDSP).")
                     .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Visualization Style")
+                    .font(.headline)
+
+                Picker("", selection: Binding(
+                    get: { vm.visualizerMode },
+                    set: { vm.setVisualizerMode($0) }
+                )) {
+                    ForEach(VisualizerMode.allCases) { mode in
+                        Label(mode.rawValue, systemImage: mode.systemImage).tag(mode)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(maxWidth: 320, alignment: .leading)
+                .help("Select default visualization style")
+
+                Text(visualizerDescription(for: vm.visualizerMode))
+                    .font(.caption)
                     .foregroundColor(.secondary)
             }
 
@@ -303,9 +324,9 @@ public struct SettingsView: View {
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .frame(maxWidth: 420, alignment: .leading)
-                .help("Select target frame rate for the spectrum analyzer")
+                .help("Select target frame rate for the audio visualizer")
 
-                Text("Controls the FFT calculation and redraw frequency. 120 FPS provides maximum fluid motion on Apple ProMotion displays.")
+                Text("Controls the calculation and redraw frequency. 120 FPS provides maximum fluid motion on Apple ProMotion displays.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -317,19 +338,19 @@ public struct SettingsView: View {
                 Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
                     GridRow {
                         Text("DSP Framework:").foregroundColor(.secondary)
-                        Text("Apple Accelerate (vDSP FFT)")
+                        Text("Apple Accelerate (vDSP FFT & Vectorized Math)")
                     }
                     GridRow {
-                        Text("Frequency Range:").foregroundColor(.secondary)
-                        Text("20 Hz to 20,000 Hz (Logarithmic binning)")
+                        Text("Frequency Spectrum:").foregroundColor(.secondary)
+                        Text("64 Logarithmic Bands (35 Hz to 16,000 Hz)")
                     }
                     GridRow {
                         Text("Window Function:").foregroundColor(.secondary)
                         Text("Hann Window with spectral leakage suppression")
                     }
                     GridRow {
-                        Text("Ballistics:").foregroundColor(.secondary)
-                        Text("Dynamic attack & exponential decay with peak-hold caps")
+                        Text("Analog VU Movement:").foregroundColor(.secondary)
+                        Text("D'Arsonval Galvanometer Spring-Damper Inertia")
                     }
                 }
                 .font(.system(size: 12, design: .monospaced))
@@ -521,5 +542,16 @@ public struct SettingsView: View {
         vm.config.libraryFolders.removeAll { $0 == folder }
         vm.config.save()
         vm.library.startSync(folders: vm.config.libraryFolders, fullRescan: false)
+    }
+
+    private func visualizerDescription(for mode: VisualizerMode) -> String {
+        switch mode {
+        case .bars:
+            return "Classic 64-band logarithmic frequency analyzer with responsive attack, exponential decay, and peak caps."
+        case .vuMeter:
+            return "Twin Left/Right vintage analog VU meters with authentic D'Arsonval needle inertia and peak overload LEDs."
+        case .circular:
+            return "Symmetrical 360° radial frequency halo with a dynamic sub-bass pulsating core."
+        }
     }
 }

@@ -59,8 +59,8 @@ public final class AudioEngine: ObservableObject {
         engine.connect(playerNode, to: mixerNode, format: nil)
         engine.connect(mixerNode, to: engine.mainMixerNode, format: nil)
 
-        // Install tap on mixerNode to feed the VisualizerEngine
-        mixerNode.installTap(onBus: 0, bufferSize: AVAudioFrameCount(VisualizerEngine.fftSize), format: nil, block: Self.makeTapBlock())
+        // Install high-frequency tap on mixerNode to feed the VisualizerEngine (512 frames = ~86 Hz delivery at 44.1kHz)
+        mixerNode.installTap(onBus: 0, bufferSize: 512, format: nil, block: Self.makeTapBlock())
 
         do {
             try engine.start()
@@ -83,17 +83,11 @@ public final class AudioEngine: ObservableObject {
         if channelCount == 1 {
             let ptr = channelData[0]
             let buf = UnsafeBufferPointer(start: ptr, count: frameLength)
-            VisualizerEngine.shared.pushSamples(buf)
+            VisualizerEngine.shared.pushStereoSamples(left: buf, right: buf)
         } else if channelCount >= 2 {
-            let left = channelData[0]
-            let right = channelData[1]
-            var mono = [Float](repeating: 0, count: frameLength)
-            for i in 0..<frameLength {
-                mono[i] = (left[i] + right[i]) * 0.5
-            }
-            mono.withUnsafeBufferPointer { buf in
-                VisualizerEngine.shared.pushSamples(buf)
-            }
+            let leftBuf = UnsafeBufferPointer(start: channelData[0], count: frameLength)
+            let rightBuf = UnsafeBufferPointer(start: channelData[1], count: frameLength)
+            VisualizerEngine.shared.pushStereoSamples(left: leftBuf, right: rightBuf)
         }
     }
 
