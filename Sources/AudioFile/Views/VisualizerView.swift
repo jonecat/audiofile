@@ -121,15 +121,21 @@ public struct VisualizerView: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 12)
 
-                    // Synchronized 5-Line Lyrics Card (Toggleable)
+                    // Synchronized Lyrics Card (Toggleable, Expands dynamically to fill content when visualizer is off)
                     if vm.showLyrics {
                         LyricsCardView(
                             status: vm.lyrics.status,
                             window: vm.lyrics.currentWindow,
-                            scale: $vm.lyricsScale
+                            scale: $vm.lyricsScale,
+                            isExpanded: !vm.showVisualizer,
+                            onSeek: { timestamp in
+                                vm.audio.seek(to: timestamp)
+                            }
                         )
-                        .layoutPriority(1)
+                        .frame(maxWidth: .infinity, maxHeight: vm.showVisualizer ? nil : .infinity)
+                        .layoutPriority(vm.showVisualizer ? 0 : 1)
                         .padding(.horizontal, 24)
+                        .padding(.bottom, vm.showVisualizer ? 0 : 12)
                     }
 
                     // Responsive Real-Time Multi-Mode Visualizer (Toggleable, Isolated for 60/120 FPS performance)
@@ -139,7 +145,7 @@ public struct VisualizerView: View {
                             .layoutPriority(0)
                             .padding(.horizontal, 24)
                             .padding(.bottom, 12)
-                    } else {
+                    } else if !vm.showLyrics {
                         Spacer(minLength: 12)
                     }
 
@@ -205,10 +211,6 @@ private struct VisualizerCardContainer: View {
                 .help("Switch visualizer mode (click visualization to cycle)")
 
                 Spacer()
-
-                Text(modeSubtitle)
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundColor(.secondary)
             }
 
             ZStack {
@@ -236,17 +238,6 @@ private struct VisualizerCardContainer: View {
                 }
             }
             .help("Click to switch to \(vm.visualizerMode.next.rawValue)")
-        }
-    }
-
-    private var modeSubtitle: String {
-        switch vm.visualizerMode {
-        case .bars:
-            return "64 Bands • \(vm.config.visualizerFPS) FPS"
-        case .vuMeter:
-            return "Stereo Ballistics • 300ms Rise"
-        case .circular:
-            return "Radial FFT • \(vm.config.visualizerFPS) FPS"
         }
     }
 }

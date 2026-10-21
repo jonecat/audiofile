@@ -15,6 +15,13 @@ public final class LyricsManager: ObservableObject {
     @Published public private(set) var status: LyricsStatus = .idle
     @Published public private(set) var currentWindow: LyricsWindow = LyricsWindow()
 
+    public var syncedLyrics: SyncedLyrics? {
+        if case .found(let synced) = status {
+            return synced
+        }
+        return nil
+    }
+
     private var currentTrackId: String?
     private var activeTask: Task<Void, Never>?
 
