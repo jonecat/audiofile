@@ -6,69 +6,8 @@ public struct PlayerBarView: View {
 
     public var body: some View {
         HStack(spacing: 16) {
-            // Track Artwork & Info
-            HStack(spacing: 14) {
-                Button {
-                    vm.selectedSection = .visualizer
-                } label: {
-                    ArtworkView(track: audio.currentTrack, cornerRadius: 8, shadowRadius: 3)
-                        .frame(width: 66, height: 66)
-                }
-                .buttonStyle(.plain)
-                .help("Open Now Playing & Visualizer (⌘4)")
-
-                VStack(alignment: .leading, spacing: 3) {
-                    if let track = audio.currentTrack {
-                        Text(track.displayTitle)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-
-                        Text(track.displayArtist)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-
-                        HStack(spacing: 6) {
-                            FormatBadgeView(format: track.format, isLossless: track.isLossless)
-                            if let shortQuality = track.shortQualityDescription {
-                                Text(shortQuality)
-                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                                    .lineLimit(1)
-                            }
-                        }
-                    } else {
-                        Text("No Track Playing")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.secondary)
-                        Text("Select a song to start listening")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary.opacity(0.7))
-                    }
-                }
-                .frame(width: 180, alignment: .leading)
-
-                if let track = audio.currentTrack {
-                    Button {
-                        vm.toggleFavorite(track: track)
-                    } label: {
-                        Image(systemName: vm.isCurrentTrackFavorite ? "star.fill" : "star")
-                            .foregroundStyle(vm.isCurrentTrackFavorite ? Color.accentColor : Color.primary.opacity(0.85))
-                            .font(.system(size: 13))
-                            .frame(width: 28, height: 28)
-                            .contentShape(.circle)
-                            .glassEffect(
-                                vm.isCurrentTrackFavorite
-                                    ? .regular.tint(Color.accentColor.opacity(0.25)).interactive()
-                                    : .regular.interactive(),
-                                in: .circle
-                            )
-                    }
-                    .buttonStyle(.plain)
-                    .contentShape(.circle)
-                    .help(vm.isCurrentTrackFavorite ? "Remove from Favorites (F)" : "Add to Favorites (F)")
-                }
-            }
+            // Track Artwork & Info (isolated from 20Hz playback updates so tooltips never flicker or cancel)
+            PlayerBarTrackInfoView(vm: vm, track: audio.currentTrack)
 
             Spacer()
 
@@ -169,31 +108,7 @@ public struct PlayerBarView: View {
                 }
 
                 // Scrubber Bar & Times
-                HStack(spacing: 8) {
-                    Text(formatDuration(audio.currentTime))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: 42, alignment: .trailing)
-
-                    WaveformBarView(
-                        waveform: vm.currentWaveform,
-                        currentTime: audio.currentTime,
-                        duration: audio.duration
-                    ) { seekTime in
-                        audio.seek(to: seekTime)
-                    }
-                    .frame(maxWidth: 420)
-                    .help("Click to seek in track")
-
-                    Text("-" + formatDuration(max(0, audio.duration - audio.currentTime)))
-                        .font(.system(size: 10, weight: .medium, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-                        .frame(width: 46, alignment: .leading)
-                }
+                PlayerBarScrubberView(vm: vm, audio: audio)
             }
 
             Spacer()
@@ -232,6 +147,116 @@ public struct PlayerBarView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .padding(.top, 4)
+    }
+}
+
+// MARK: - Isolated Track Info Header (Free from 20Hz currentTime redraws)
+
+private struct PlayerBarTrackInfoView: View {
+    @ObservedObject var vm: PlayerViewModel
+    let track: Track?
+
+    var body: some View {
+        HStack(spacing: 14) {
+            Button {
+                vm.selectedSection = .visualizer
+            } label: {
+                ArtworkView(track: track, cornerRadius: 8, shadowRadius: 3)
+                    .frame(width: 66, height: 66)
+            }
+            .buttonStyle(.plain)
+            .help("Open Now Playing & Visualizer (⌘4)")
+
+            VStack(alignment: .leading, spacing: 3) {
+                if let t = track {
+                    Text(t.displayTitle)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+
+                    Text(t.displayArtist)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+
+                    HStack(spacing: 6) {
+                        FormatBadgeView(format: t.format, isLossless: t.isLossless)
+                        DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
+                            vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                        }
+                        if let shortQuality = t.shortQualityDescription {
+                            Text(shortQuality)
+                                .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .lineLimit(1)
+                        }
+                    }
+                } else {
+                    Text("No Track Playing")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                    Text("Select a song to start listening")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary.opacity(0.7))
+                }
+            }
+            .frame(minWidth: 180, maxWidth: 240, alignment: .leading)
+
+            if let t = track {
+                Button {
+                    vm.toggleFavorite(track: t)
+                } label: {
+                    Image(systemName: vm.isCurrentTrackFavorite ? "star.fill" : "star")
+                        .foregroundStyle(vm.isCurrentTrackFavorite ? Color.accentColor : Color.primary.opacity(0.85))
+                        .font(.system(size: 13))
+                        .frame(width: 28, height: 28)
+                        .contentShape(.circle)
+                        .glassEffect(
+                            vm.isCurrentTrackFavorite
+                                ? .regular.tint(Color.accentColor.opacity(0.25)).interactive()
+                                : .regular.interactive(),
+                            in: .circle
+                        )
+                }
+                .buttonStyle(.plain)
+                .contentShape(.circle)
+                .help(vm.isCurrentTrackFavorite ? "Remove from Favorites (F)" : "Add to Favorites (F)")
+            }
+        }
+    }
+}
+
+// MARK: - Isolated Scrubber (Receives 20Hz currentTime updates without affecting track info)
+
+private struct PlayerBarScrubberView: View {
+    @ObservedObject var vm: PlayerViewModel
+    @ObservedObject var audio: AudioEngine
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(formatDuration(audio.currentTime))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: 42, alignment: .trailing)
+
+            WaveformBarView(
+                waveform: vm.currentWaveform,
+                currentTime: audio.currentTime,
+                duration: audio.duration
+            ) { seekTime in
+                audio.seek(to: seekTime)
+            }
+            .frame(maxWidth: 420)
+            .help("Click to seek in track")
+
+            Text("-" + formatDuration(max(0, audio.duration - audio.currentTime)))
+                .font(.system(size: 10, weight: .medium, design: .monospaced))
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .frame(width: 46, alignment: .leading)
+        }
     }
 
     private func formatDuration(_ time: TimeInterval) -> String {

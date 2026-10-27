@@ -7,115 +7,11 @@ public struct VisualizerView: View {
     public var body: some View {
         GeometryReader { geometry in
             let isCompact = geometry.size.height < 560
-            let artworkSize: CGFloat = isCompact ? 100 : 130
 
             VStack(spacing: isCompact ? 10 : 16) {
                 if let track = audio.currentTrack {
-                    // Top Section: Artwork & Track Info
-                    HStack(alignment: .center, spacing: 20) {
-                        Button {
-                            vm.inspectingArtworkTrack = track
-                        } label: {
-                            ZStack(alignment: .bottomTrailing) {
-                                ArtworkView(track: track, cornerRadius: 10, shadowRadius: 6)
-                                    .frame(width: artworkSize, height: artworkSize)
-
-                                Image(systemName: "arrow.up.left.and.arrow.down.right")
-                                    .font(.system(size: 9, weight: .bold))
-                                    .foregroundColor(.white)
-                                    .padding(4)
-                                    .background(Circle().fill(Color.black.opacity(0.6)))
-                                    .padding(5)
-                            }
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .stroke(Color.white.opacity(0.15), lineWidth: 1)
-                            )
-                        }
-                        .buttonStyle(.plain)
-                        .help("Click to view full album artwork")
-                        .onHover { inside in
-                            if inside {
-                                NSCursor.pointingHand.push()
-                            } else {
-                                NSCursor.pop()
-                            }
-                        }
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(track.displayTitle)
-                                .font(.system(size: isCompact ? 18 : 22, weight: .bold))
-                                .lineLimit(2)
-
-                            Text(track.displayArtist)
-                                .font(.system(size: isCompact ? 14 : 16, weight: .semibold))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-
-                            // Album with release year: e.g. (1984)
-                            Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
-                                .font(.system(size: isCompact ? 12 : 14))
-                                .foregroundColor(.secondary.opacity(0.85))
-                                .lineLimit(1)
-
-                            HStack(spacing: 8) {
-                                FormatBadgeView(format: track.format, isLossless: track.isLossless)
-
-                                Text(track.qualityDescription)
-                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                                    .foregroundColor(.secondary)
-                            }
-                            .padding(.top, 2)
-                        }
-                        Spacer()
-
-                        // Content Area Toggles for Lyrics & Visualizer
-                        GlassEffectContainer(spacing: 8) {
-                            HStack(spacing: 8) {
-                                Button {
-                                    vm.toggleLyrics()
-                                } label: {
-                                    Label("Lyrics", systemImage: vm.showLyrics ? "quote.bubble.fill" : "quote.bubble")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(vm.showLyrics ? Color.white : Color.primary.opacity(0.85))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .contentShape(.capsule)
-                                        .glassEffect(
-                                            vm.showLyrics
-                                                ? .regular.tint(Color.accentColor).interactive()
-                                                : .regular.interactive(),
-                                            in: .capsule
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(.capsule)
-                                .help("Toggle Lyrics (L)")
-
-                                Button {
-                                    vm.toggleVisualizer()
-                                } label: {
-                                    Label("Visualizer", systemImage: "waveform")
-                                        .font(.system(size: 12, weight: .semibold))
-                                        .foregroundStyle(vm.showVisualizer ? Color.white : Color.primary.opacity(0.85))
-                                        .padding(.horizontal, 12)
-                                        .padding(.vertical, 6)
-                                        .contentShape(.capsule)
-                                        .glassEffect(
-                                            vm.showVisualizer
-                                                ? .regular.tint(Color.accentColor).interactive()
-                                                : .regular.interactive(),
-                                            in: .capsule
-                                        )
-                                }
-                                .buttonStyle(.plain)
-                                .contentShape(.capsule)
-                                .help("Toggle Spectrum Analyzer")
-                            }
-                        }
-                    }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 12)
+                    // Top Section: Artwork & Track Info (isolated from 20Hz audio timer redraws)
+                    VisualizerHeaderView(track: track, vm: vm, isCompact: isCompact)
 
                     // Synchronized Lyrics Card (Toggleable, Expands dynamically to fill content when visualizer is off)
                     if vm.showLyrics {
@@ -170,7 +66,123 @@ public struct VisualizerView: View {
             .sheet(item: $vm.inspectingArtworkTrack) { track in
                 ArtworkDetailModalView(vm: vm, track: track)
             }
+            .animation(.easeInOut(duration: 0.25), value: vm.showLyrics)
+            .animation(.easeInOut(duration: 0.25), value: vm.showVisualizer)
         }
+    }
+}
+
+// MARK: - Isolated Header View (Stays completely stationary during playback so tooltips never cancel)
+
+private struct VisualizerHeaderView: View {
+    let track: Track
+    @ObservedObject var vm: PlayerViewModel
+    let isCompact: Bool
+
+    var body: some View {
+        let artworkSize: CGFloat = isCompact ? 100 : 130
+
+        HStack(alignment: .center, spacing: 20) {
+            Button {
+                vm.inspectingArtworkTrack = track
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    ArtworkView(track: track, cornerRadius: 10, shadowRadius: 6)
+                        .frame(width: artworkSize, height: artworkSize)
+
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(4)
+                        .background(Circle().fill(Color.black.opacity(0.6)))
+                        .padding(5)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(Color.white.opacity(0.15), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Click to view full album artwork")
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(track.displayTitle)
+                    .font(.system(size: isCompact ? 18 : 22, weight: .bold))
+                    .lineLimit(2)
+
+                Text(track.displayArtist)
+                    .font(.system(size: isCompact ? 14 : 16, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+
+                // Album with release year: e.g. (1984)
+                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                    .font(.system(size: isCompact ? 12 : 14))
+                    .foregroundColor(.secondary.opacity(0.85))
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    FormatBadgeView(format: track.format, isLossless: track.isLossless)
+
+                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    }
+
+                    Text(track.qualityDescription)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 2)
+            }
+            Spacer()
+
+            // Content Area Toggles for Lyrics & Visualizer
+            GlassEffectContainer(spacing: 8) {
+                HStack(spacing: 8) {
+                    Button {
+                        vm.toggleLyrics()
+                    } label: {
+                        Label("Lyrics", systemImage: vm.showLyrics ? "quote.bubble.fill" : "quote.bubble")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(vm.showLyrics ? Color.white : Color.primary.opacity(0.85))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(.capsule)
+                            .glassEffect(
+                                vm.showLyrics
+                                    ? .regular.tint(Color.accentColor).interactive()
+                                    : .regular.interactive(),
+                                in: .capsule
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(.capsule)
+                    .help("Toggle Lyrics (L)")
+
+                    Button {
+                        vm.toggleVisualizer()
+                    } label: {
+                        Label("Visualizer", systemImage: "waveform")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(vm.showVisualizer ? Color.white : Color.primary.opacity(0.85))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 6)
+                            .contentShape(.capsule)
+                            .glassEffect(
+                                vm.showVisualizer
+                                    ? .regular.tint(Color.accentColor).interactive()
+                                    : .regular.interactive(),
+                                in: .capsule
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .contentShape(.capsule)
+                    .help("Toggle Spectrum Analyzer")
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
     }
 }
 

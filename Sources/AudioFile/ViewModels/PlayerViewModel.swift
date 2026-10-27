@@ -130,6 +130,8 @@ public final class PlayerViewModel: ObservableObject {
     @Published public private(set) var sortedTracks: [Track] = []
 
     @Published public var currentWaveform: WaveformData?
+    @Published public var currentDynamicRange: DynamicRangeState = .idle
+    private var dynamicRangeTask: Task<Void, Never>?
     @Published public var currentToast: ToastMessage?
     private var toastDismissTask: Task<Void, Never>?
 
@@ -230,7 +232,7 @@ public final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Waveform loading when track changes
+        // Waveform & Dynamic Range loading when track changes
         audio.$currentTrack
             .receive(on: RunLoop.main)
             .sink { [weak self] track in
@@ -243,11 +245,47 @@ public final class PlayerViewModel: ObservableObject {
                             self.currentWaveform = wf
                         }
                     }
+                    self.calculateDynamicRange(for: t)
                 } else {
                     self.currentWaveform = nil
+                    self.currentDynamicRange = .idle
+                    self.dynamicRangeTask?.cancel()
+                    self.dynamicRangeTask = nil
                 }
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - On-Demand Dynamic Range Measurement
+
+    public func calculateDynamicRange(for track: Track, forceRecalculate: Bool = false) {
+        dynamicRangeTask?.cancel()
+
+        dynamicRangeTask = Task {
+            if !forceRecalculate {
+                if let cached = await DynamicRangeEngine.shared.cachedResult(for: track) {
+                    await MainActor.run {
+                        self.currentDynamicRange = .ready(cached)
+                    }
+                    return
+                }
+            }
+
+            await MainActor.run {
+                self.currentDynamicRange = .calculating
+            }
+
+            let result = await DynamicRangeEngine.shared.dynamicRange(for: track, forceRecalculate: forceRecalculate)
+            guard !Task.isCancelled else { return }
+
+            await MainActor.run {
+                if let res = result {
+                    self.currentDynamicRange = .ready(res)
+                } else {
+                    self.currentDynamicRange = .failed("Unsupported format or unreadable stream")
+                }
+            }
+        }
     }
 
     // MARK: - Visualizer Loop

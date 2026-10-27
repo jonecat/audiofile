@@ -311,6 +311,13 @@ public final class LibraryManager: ObservableObject {
         saveLibrary()
     }
 
+    public func updateTrackDynamicRange(id: String, score: Int) {
+        if let idx = tracks.firstIndex(where: { $0.id == id }) {
+            tracks[idx].dynamicRange = score
+            saveLibrary()
+        }
+    }
+
     public func removeTrack(id: String) {
         tracks.removeAll { $0.id == id }
         sortTracks()

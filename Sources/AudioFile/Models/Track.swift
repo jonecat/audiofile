@@ -21,6 +21,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var hasCoverArt: Bool
     public var fileSize: UInt64?
     public var modifiedDate: Date?
+    public var dynamicRange: Int?
 
     public init(
         id: String? = nil,
@@ -41,7 +42,8 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         bitrate: Int? = nil,
         hasCoverArt: Bool = false,
         fileSize: UInt64? = nil,
-        modifiedDate: Date? = nil
+        modifiedDate: Date? = nil,
+        dynamicRange: Int? = nil
     ) {
         self.path = path
         self.id = id ?? Track.generateId(for: path)
@@ -62,6 +64,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.hasCoverArt = hasCoverArt
         self.fileSize = fileSize
         self.modifiedDate = modifiedDate
+        self.dynamicRange = dynamicRange
     }
 
     public static func generateId(for path: URL) -> String {

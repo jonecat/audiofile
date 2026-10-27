@@ -57,10 +57,15 @@ public enum OpenSourceDecoders {
         return try AVAudioFile(forReading: playableURL)
     }
 
+    private static let decodeLock = NSLock()
+
     public static func playablePCMFileURL(for url: URL) throws -> URL {
         if !requiresCustomDecoder(url) {
             return url
         }
+
+        decodeLock.lock()
+        defer { decodeLock.unlock() }
 
         let cachedWAV = cacheFileURL(for: url)
         if FileManager.default.fileExists(atPath: cachedWAV.path),
@@ -74,28 +79,14 @@ public enum OpenSourceDecoders {
         let tempWAV = cachedWAV.deletingPathExtension().appendingPathExtension("tmp.wav")
         try? FileManager.default.removeItem(at: tempWAV)
 
-        // 1. For DSF (.dsf) and DSDIFF (.dff), try pure-Swift native 1-bit DSD-to-PCM decimator first, or FFmpeg
-        if ext == "dsf" {
-            if (try? decodeDSFToWAV(sourceURL: url, destinationWAV: tempWAV)) != nil {
-                try? FileManager.default.removeItem(at: cachedWAV)
-                try FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
-                return cachedWAV
-            }
-        } else if ext == "dff" || ext == "dsd" {
-            if (try? decodeDFFToWAV(sourceURL: url, destinationWAV: tempWAV)) != nil {
-                try? FileManager.default.removeItem(at: cachedWAV)
-                try FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
-                return cachedWAV
-            }
-        }
-
-        // 2. Decode via open-source FFmpeg (handles Monkey's Audio .ape as well as .dsf / .dff)
+        // 1. Primary: decode via open-source FFmpeg (gives audiophile 24-bit 88.2 kHz decimation with steep lowpass, eliminating DSD quantization noise floor)
         if let ffmpegPath = findExecutable(named: "ffmpeg") {
             let proc = Process()
             proc.executableURL = URL(fileURLWithPath: ffmpegPath)
+            proc.standardInput = Pipe() // Ensure ffmpeg never hangs on terminal stdin
             if ext == "dsf" || ext == "dff" || ext == "dsd" {
                 proc.arguments = [
-                    "-y", "-v", "error",
+                    "-nostdin", "-nostats", "-y", "-v", "error",
                     "-i", url.path,
                     "-af", "lowpass=f=40000",
                     "-ar", "88200",
@@ -105,19 +96,34 @@ public enum OpenSourceDecoders {
             } else {
                 // Lossless 24-bit PCM decode for Monkey's Audio (.ape)
                 proc.arguments = [
-                    "-y", "-v", "error",
+                    "-nostdin", "-nostats", "-y", "-v", "error",
                     "-i", url.path,
                     "-vn",
                     "-c:a", "pcm_s24le",
                     tempWAV.path
                 ]
             }
-            try proc.run()
-            proc.waitUntilExit()
+            if (try? proc.run()) != nil {
+                proc.waitUntilExit()
+                if proc.terminationStatus == 0, FileManager.default.fileExists(atPath: tempWAV.path) {
+                    try? FileManager.default.removeItem(at: cachedWAV)
+                    try? FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
+                    return cachedWAV
+                }
+            }
+        }
 
-            if proc.terminationStatus == 0, FileManager.default.fileExists(atPath: tempWAV.path) {
+        // 2. Secondary fallback: Pure-Swift native 1-bit DSD-to-PCM decimator if ffmpeg is not available
+        if ext == "dsf" {
+            if (try? decodeDSFToWAV(sourceURL: url, destinationWAV: tempWAV)) != nil {
                 try? FileManager.default.removeItem(at: cachedWAV)
-                try FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
+                try? FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
+                return cachedWAV
+            }
+        } else if ext == "dff" || ext == "dsd" {
+            if (try? decodeDFFToWAV(sourceURL: url, destinationWAV: tempWAV)) != nil {
+                try? FileManager.default.removeItem(at: cachedWAV)
+                try? FileManager.default.moveItem(at: tempWAV, to: cachedWAV)
                 return cachedWAV
             }
         }
