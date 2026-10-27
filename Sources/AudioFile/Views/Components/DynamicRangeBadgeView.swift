@@ -16,7 +16,10 @@ public struct DynamicRangeBadgeView: View {
     }
 
     public var body: some View {
-        if let action = onAction {
+        if onAction != nil, case .calculating = state {
+            content
+                .help(tooltipText)
+        } else if let action = onAction {
             Button(action: action) {
                 content
             }
@@ -43,18 +46,20 @@ public struct DynamicRangeBadgeView: View {
                 .regular.tint(result.ratingCategory.color.opacity(0.85)),
                 in: .capsule
             )
-            .help(tooltipText)
 
         case .calculating:
-            HStack(spacing: 3) {
+            HStack(spacing: 4) {
+                ProgressView()
+                    .controlSize(.mini)
+                    .scaleEffect(0.65)
+                    .frame(width: 10, height: 10)
                 Text(compact ? "DR…" : "DR …")
                     .font(.system(size: 9, weight: .bold, design: .monospaced))
                     .foregroundStyle(Color.secondary)
             }
-            .padding(.horizontal, compact ? 5 : 7)
+            .padding(.horizontal, compact ? 6 : 7)
             .padding(.vertical, 2)
             .glassEffect(.regular, in: .capsule)
-            .help(tooltipText)
 
         case .idle:
             HStack(spacing: 3) {
@@ -67,7 +72,6 @@ public struct DynamicRangeBadgeView: View {
             .padding(.horizontal, compact ? 6 : 7)
             .padding(.vertical, 2)
             .glassEffect(.regular, in: .capsule)
-            .help(tooltipText)
 
         case .failed:
             Text("DR —")
@@ -76,7 +80,6 @@ public struct DynamicRangeBadgeView: View {
                 .padding(.horizontal, compact ? 6 : 7)
                 .padding(.vertical, 2)
                 .glassEffect(.clear, in: .capsule)
-                .help(tooltipText)
         }
     }
 
