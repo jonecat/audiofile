@@ -200,4 +200,14 @@ public final class PlaylistManager: ObservableObject {
             }
         }
     }
+
+    public func pruneOrphans(validTrackIds: Set<String>) {
+        let beforeFavs = favorites.count
+        favorites = favorites.filter { validTrackIds.contains($0) }
+        let beforeRecent = recentlyPlayed.count
+        recentlyPlayed = recentlyPlayed.filter { validTrackIds.contains($0) }
+        if favorites.count != beforeFavs || recentlyPlayed.count != beforeRecent {
+            save()
+        }
+    }
 }

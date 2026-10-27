@@ -87,7 +87,17 @@ public struct SongsView: View {
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 } else if let br = track.bitrate {
-                    Text("\(br) kbps")
+                    if let rateStr = track.formattedSampleRate {
+                        Text("\(br) kbps • \(rateStr)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    } else {
+                        Text("\(br) kbps")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                } else if let rateStr = track.formattedSampleRate {
+                    Text(rateStr)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }

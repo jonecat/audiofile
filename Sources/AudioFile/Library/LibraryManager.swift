@@ -114,6 +114,7 @@ public final class LibraryManager: ObservableObject {
             }
             self.tracks = loaded
             sortTracks()
+            PlaylistManager.shared.pruneOrphans(validTrackIds: Set(loaded.map(\.id)))
             if modified {
                 saveLibrary()
             }
@@ -280,6 +281,7 @@ public final class LibraryManager: ObservableObject {
                 }
                 self.tracks = discoveredTracks
                 self.sortTracks()
+                PlaylistManager.shared.pruneOrphans(validTrackIds: Set(discoveredTracks.map(\.id)))
                 self.saveLibrary()
                 self.isSyncing = false
                 self.isFullRescan = false

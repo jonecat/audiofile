@@ -147,23 +147,36 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     }
 
     public var shortQualityDescription: String? {
-        guard let depth = bitDepth, depth > 0, let rate = sampleRate, rate > 0 else {
-            return nil
-        }
-        if rate >= 1_000_000.0 {
-            let mhz = rate / 1_000_000.0
-            if let tier = dsdTierLabel {
-                return String(format: "%d-bit/%.2fMHz (%@)", depth, mhz, tier)
+        if let depth = bitDepth, depth > 0, let rate = sampleRate, rate > 0 {
+            if rate >= 1_000_000.0 {
+                let mhz = rate / 1_000_000.0
+                if let tier = dsdTierLabel {
+                    return String(format: "%d-bit/%.2fMHz (%@)", depth, mhz, tier)
+                }
+                return String(format: "%d-bit/%.2fMHz", depth, mhz)
+            } else {
+                let khz = rate / 1000.0
+                if khz == khz.rounded() {
+                    return String(format: "%d-bit/%.0fkHz", depth, khz)
+                } else {
+                    return String(format: "%d-bit/%.1fkHz", depth, khz)
+                }
             }
-            return String(format: "%d-bit/%.2fMHz", depth, mhz)
-        } else {
+        } else if let depth = bitDepth, depth > 0 {
+            return "\(depth)-bit"
+        } else if let br = bitrate, br > 0, let rate = sampleRate, rate > 0 {
             let khz = rate / 1000.0
             if khz == khz.rounded() {
-                return String(format: "%d-bit/%.0fkHz", depth, khz)
+                return String(format: "%d kbps/%.0fkHz", br, khz)
             } else {
-                return String(format: "%d-bit/%.1fkHz", depth, khz)
+                return String(format: "%d kbps/%.1fkHz", br, khz)
             }
+        } else if let br = bitrate, br > 0 {
+            return "\(br) kbps"
+        } else if let formattedRate = formattedSampleRate {
+            return formattedRate.replacingOccurrences(of: " ", with: "")
         }
+        return nil
     }
 
     public var qualityDescription: String {
@@ -171,12 +184,12 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
 
         if let depth = bitDepth, depth > 0 {
             parts.append("\(depth)-bit")
+        } else if let br = bitrate, br > 0 {
+            parts.append("\(br) kbps")
         }
 
         if let formattedRate = formattedSampleRate {
             parts.append(formattedRate)
-        } else if let br = bitrate, br > 0 {
-            parts.append("\(br) kbps")
         }
 
         if isLossless {

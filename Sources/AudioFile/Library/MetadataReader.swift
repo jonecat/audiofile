@@ -17,7 +17,7 @@ public struct MetadataReader: Sendable {
         guard isAudioFile(url) else { return nil }
 
         let ext = url.pathExtension.lowercased()
-        let formatName = formatDisplayName(for: ext)
+        var formatName = formatDisplayName(for: ext)
 
         var title: String = ""
         var artist: String = ""
@@ -66,7 +66,12 @@ public struct MetadataReader: Sendable {
 
             // Estimate bit depth from format settings
             let settings = fileFormat.settings
-            if let depth = settings[AVLinearPCMBitDepthKey] as? Int {
+            let formatID = fileFormat.streamDescription.pointee.mFormatID
+            if formatID == kAudioFormatAppleLossless {
+                formatName = "ALAC"
+                let bits = Int(fileFormat.streamDescription.pointee.mBitsPerChannel)
+                bitDepth = bits > 0 ? bits : 16
+            } else if let depth = settings[AVLinearPCMBitDepthKey] as? Int {
                 bitDepth = depth
             } else if ext == "flac" || ext == "alac" {
                 // Typical lossless bit depth
@@ -80,6 +85,10 @@ public struct MetadataReader: Sendable {
             if let dur = try? await asset.load(.duration) {
                 duration = CMTimeGetSeconds(dur)
             }
+        }
+
+        if bitrate == nil, duration > 0, let size = fileSize {
+            bitrate = Int((Double(size * 8) / duration) / 1000.0)
         }
 
         if let metadata = try? await asset.load(.metadata) {

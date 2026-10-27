@@ -268,7 +268,7 @@ public struct PlaylistsView: View {
         let trackMap = Dictionary(uniqueKeysWithValues: vm.library.tracks.map { ($0.id, $0) })
         switch section {
         case .favorites:
-            return vm.playlists.favorites.compactMap { trackMap[$0] }
+            return vm.favoriteTracks
         case .recentlyPlayed:
             return vm.playlists.recentlyPlayed.compactMap { trackMap[$0] }
         case .playlist(let id):

@@ -80,8 +80,9 @@ public struct SidebarView: View {
                         HStack {
                             Label("Favorites", systemImage: "star.fill")
                             Spacer()
-                            if !vm.playlists.favorites.isEmpty {
-                                Text("\(vm.playlists.favorites.count)")
+                            let favCount = vm.favoriteTracks.count
+                            if favCount > 0 {
+                                Text("\(favCount)")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }

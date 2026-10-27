@@ -152,11 +152,22 @@ public final class AudioEngine: ObservableObject {
         do {
             let file = try OpenSourceDecoders.openAudioFile(for: track.path)
             self.audioFile = file
-            self.currentTrack = track
             self.totalFrames = file.length
             self.fileSampleRate = file.fileFormat.sampleRate
             let fileDuration = file.fileFormat.sampleRate > 0 ? Double(file.length) / file.fileFormat.sampleRate : 0
             self.duration = fileDuration > 0 ? fileDuration : max(0, track.duration)
+
+            var playingTrack = track
+            var trackChanged = false
+            if playingTrack.sampleRate == nil && fileSampleRate > 0 {
+                playingTrack.sampleRate = fileSampleRate
+                trackChanged = true
+            }
+            if playingTrack.bitrate == nil, let size = playingTrack.fileSize, self.duration > 0 {
+                playingTrack.bitrate = Int((Double(size * 8) / self.duration) / 1000.0)
+                trackChanged = true
+            }
+            self.currentTrack = trackChanged ? playingTrack : track
 
             VisualizerEngine.shared.setSampleRate(fileSampleRate)
 

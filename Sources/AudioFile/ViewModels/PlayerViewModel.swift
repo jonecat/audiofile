@@ -144,7 +144,7 @@ public final class PlayerViewModel: ObservableObject {
     public let lyrics = LyricsManager.shared
     public let visualizer = VisualizerState.shared
     public let updater = AppUpdater.shared
-    public var config: AppConfig
+    @Published public var config: AppConfig
 
     private var originalQueue: [Track] = []
     private var cancellables = Set<AnyCancellable>()
@@ -574,6 +574,11 @@ public final class PlayerViewModel: ObservableObject {
     public var isCurrentTrackFavorite: Bool {
         guard let track = audio.currentTrack else { return false }
         return playlists.isFavorite(trackId: track.id)
+    }
+
+    public var favoriteTracks: [Track] {
+        let trackMap = Dictionary(uniqueKeysWithValues: library.tracks.map { ($0.id, $0) })
+        return playlists.favorites.compactMap { trackMap[$0] }
     }
 
     // MARK: - Resizable Columns

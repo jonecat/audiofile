@@ -5,7 +5,6 @@ public struct SettingsView: View {
     @ObservedObject var vm: PlayerViewModel
     @ObservedObject var library = LibraryManager.shared
     @Environment(\.dismiss) private var dismiss
-    @Namespace private var tabNamespace
 
     public init(vm: PlayerViewModel) {
         self.vm = vm
@@ -41,6 +40,9 @@ public struct SettingsView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .padding(.bottom, 12)
+            .frame(height: 60)
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(100)
 
             Divider()
 
@@ -61,8 +63,9 @@ public struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .padding(24)
+            .animation(.easeInOut(duration: 0.2), value: vm.selectedSettingsTab)
         }
-        .frame(width: 620, height: 490)
+        .frame(width: 620, height: 560)
         .alert("Lyrics Cache Cleared", isPresented: $vm.showingCacheClearedAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -73,7 +76,7 @@ public struct SettingsView: View {
     private func tabButton(for tab: SettingsTab) -> some View {
         let isSelected = (vm.selectedSettingsTab == tab)
         return Button {
-            withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+            withAnimation(.spring(duration: 0.25, bounce: 0.1)) {
                 vm.selectedSettingsTab = tab
             }
         } label: {
@@ -81,14 +84,18 @@ public struct SettingsView: View {
                 Image(systemName: tab.icon)
                     .font(.system(size: 11))
                 Text(tab.rawValue)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
             }
             .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
             .contentShape(.capsule)
-            .glassEffect(isSelected ? .regular.tint(Color.accentColor).interactive() : .identity, in: .capsule)
-            .glassEffectID(isSelected ? "activeSettingsTab" : tab.id, in: tabNamespace)
+            .glassEffect(
+                isSelected
+                    ? .regular.tint(Color.accentColor).interactive()
+                    : .regular.interactive(),
+                in: .capsule
+            )
         }
         .buttonStyle(.plain)
         .contentShape(.capsule)
@@ -279,8 +286,8 @@ public struct SettingsView: View {
     // MARK: - Tab 3: Visualizer
 
     private var visualizerTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text("Audio Visualizer")
                     .font(.title3.weight(.bold))
                 Text("Real-time DSP-driven visualizers powered by Apple Accelerate (vDSP).")
@@ -288,7 +295,7 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Visualization Style")
                     .font(.headline)
 
@@ -309,7 +316,7 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Target Frame Rate")
                     .font(.headline)
 
@@ -331,11 +338,11 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("DSP Characteristics")
                     .font(.headline)
 
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 6) {
                     GridRow {
                         Text("DSP Framework:").foregroundColor(.secondary)
                         Text("Apple Accelerate (vDSP FFT & Vectorized Math)")
@@ -354,12 +361,12 @@ public struct SettingsView: View {
                     }
                 }
                 .font(.system(size: 12, design: .monospaced))
-                .padding(14)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .glassEffect(.regular, in: .rect(cornerRadius: 12))
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
     }
 
