@@ -169,6 +169,8 @@ public struct AlbumsView: View {
                     .tag(track.id)
                 }
                 .listStyle(.plain)
+                .defaultScrollAnchor(.top)
+                .id("album_detail_\(album.id)")
                 .contextMenu(forSelectionType: String.self) { selection in
                     let selectedTracks = trackList.filter { selection.contains($0.id) }
                     if !selectedTracks.isEmpty {

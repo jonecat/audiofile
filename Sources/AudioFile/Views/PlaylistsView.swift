@@ -202,6 +202,8 @@ public struct PlaylistsView: View {
                     }
                 }
                 .listStyle(.plain)
+                .defaultScrollAnchor(.top)
+                .id("playlist_\(section)")
                 .onHover { _ in
                     vm.playlists.cleanupDragIfMouseUp()
                 }

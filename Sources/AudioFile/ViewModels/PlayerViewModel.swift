@@ -256,7 +256,7 @@ public final class PlayerViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
-    // MARK: - On-Demand Dynamic Range Measurement
+    // MARK: - Dynamic Range Measurement
 
     public func calculateDynamicRange(for track: Track, forceRecalculate: Bool = false) {
         dynamicRangeTask?.cancel()
@@ -322,7 +322,6 @@ public final class PlayerViewModel: ObservableObject {
         originalQueue = allTracks
         queue = shuffled
         currentQueueIndex = 0
-        selectedTrackId = shuffled[0].id
 
         audio.play(track: shuffled[0])
         preloadUpcoming()
@@ -401,13 +400,11 @@ public final class PlayerViewModel: ObservableObject {
         if nextIndex < queue.count {
             currentQueueIndex = nextIndex
             let next = queue[nextIndex]
-            selectedTrackId = next.id
             audio.play(track: next)
             preloadUpcoming()
         } else if repeatMode == .all {
             currentQueueIndex = 0
             let first = queue[0]
-            selectedTrackId = first.id
             audio.play(track: first)
             preloadUpcoming()
         } else {
@@ -439,13 +436,11 @@ public final class PlayerViewModel: ObservableObject {
         if prevIndex >= 0 {
             currentQueueIndex = prevIndex
             let prev = queue[prevIndex]
-            selectedTrackId = prev.id
             audio.play(track: prev)
             preloadUpcoming()
         } else if repeatMode == .all || isLibraryShuffleActive {
             currentQueueIndex = queue.count - 1
             let last = queue[currentQueueIndex]
-            selectedTrackId = last.id
             audio.play(track: last)
             preloadUpcoming()
         } else {

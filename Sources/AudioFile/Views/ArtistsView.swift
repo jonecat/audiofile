@@ -112,7 +112,10 @@ public struct ArtistsView: View {
                         .tag(album)
                     }
                     .listStyle(.plain)
+                    .defaultScrollAnchor(.top)
+                    .id("albums_\(artist)")
                     .onChange(of: vm.selectedAlbum) { _, _ in
+                        vm.selectedTrackIds.removeAll()
                         vm.syncQueueWithDisplayedTracks(displayedSongs(for: artist))
                     }
                 } else {
@@ -236,6 +239,8 @@ public struct ArtistsView: View {
                         .tag(track.id)
                     }
                     .listStyle(.plain)
+                    .defaultScrollAnchor(.top)
+                    .id("songs_\(artist)_\(vm.selectedAlbum ?? "all")")
                     .contextMenu(forSelectionType: String.self) { selection in
                         let selectedTracks = songList.filter { selection.contains($0.id) }
                         if !selectedTracks.isEmpty {
