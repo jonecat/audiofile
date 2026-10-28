@@ -220,6 +220,18 @@ public struct ArtistsView: View {
 
                             Spacer()
 
+                            // Play Count Metric
+                            let plays = track.playCount ?? 0
+                            HStack(spacing: 3) {
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 7))
+                                Text("\(plays)")
+                                    .font(.system(size: 11, design: .monospaced))
+                            }
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : (plays > 0 ? Color.secondary : Color.secondary.opacity(0.35)))
+                            .help("\(plays) \(plays == 1 ? "play" : "plays")")
+                            .frame(minWidth: 28, alignment: .trailing)
+
                             // DR Badge (DR first on the left)
                             if let score = track.dynamicRange {
                                 DynamicRangeBadgeView(score: score, compact: true, isHighlighted: isSelected)

@@ -122,6 +122,14 @@ public final class PlaylistManager: ObservableObject {
             recentlyPlayed = Array(recentlyPlayed.prefix(100))
         }
         save()
+        LibraryManager.shared.incrementPlayCount(for: trackId)
+    }
+
+    public func clearAllData() {
+        playlists.removeAll()
+        favorites.removeAll()
+        recentlyPlayed.removeAll()
+        save()
     }
 
     public func createPlaylist(name: String) -> Playlist {

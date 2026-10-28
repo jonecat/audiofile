@@ -71,6 +71,14 @@ public struct SettingsView: View {
         } message: {
             Text("All cached .lrc lyrics and negative cache markers have been removed.")
         }
+        .alert("Clear All Library Data & Rescan?", isPresented: $vm.showingResetLibraryConfirmation) {
+            Button("Clear All Data & Rescan", role: .destructive) {
+                vm.resetAndRescanLibrary()
+            }
+            Button("Cancel", role: .cancel) { }
+        } message: {
+            Text("This will permanently delete all playlists, favorites, recently played history, play counts, and cached library metadata.\n\nYour audio files on disk will NOT be touched or deleted. Your library will be rescanned from scratch.")
+        }
     }
 
     private func tabButton(for tab: SettingsTab) -> some View {
@@ -224,6 +232,39 @@ public struct SettingsView: View {
                     }
                     .animation(.easeInOut(duration: 0.2), value: library.isSyncing)
                     .animation(.easeInOut(duration: 0.2), value: library.syncCompletedMessage)
+                }
+            }
+
+            // Reset & Rebuild Section
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Reset & Rebuild Library")
+                    .font(.headline)
+
+                GlassEffectContainer(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Permanently erases all library databases, playlists, favorites, recently played history, and play counts, then performs a complete fresh rescan from your configured folders.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+
+                        HStack {
+                            Button(role: .destructive) {
+                                vm.showingResetLibraryConfirmation = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "trash")
+                                    Text("Clear All Library Data & Rescan…")
+                                }
+                                .font(.system(size: 12, weight: .semibold))
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.small)
+                            .disabled(library.isSyncing)
+                            .help("Permanently delete playlists, favorites, recently played, and cache, then rescan library folders")
+
+                            Spacer()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
 

@@ -259,8 +259,9 @@ public final class LibraryManager: ObservableObject {
                     } else {
                         // New or modified file: read metadata
                         if var track = await MetadataReader.readTrack(at: fileURL) {
-                            if let existing = existingMap[filePath], let dr = existing.dynamicRange {
-                                track.dynamicRange = dr
+                            if let existing = existingMap[filePath] {
+                                track.dynamicRange = existing.dynamicRange
+                                track.playCount = existing.playCount
                             }
                             discoveredTracks.append(track)
                         }
@@ -341,6 +342,21 @@ public final class LibraryManager: ObservableObject {
         if changed {
             saveLibrary()
         }
+    }
+
+    public func incrementPlayCount(for trackId: String) {
+        if let idx = tracks.firstIndex(where: { $0.id == trackId }) {
+            let current = tracks[idx].playCount ?? 0
+            tracks[idx].playCount = current + 1
+            saveLibrary()
+        }
+    }
+
+    public func clearAllData() {
+        tracks.removeAll()
+        rebuildIndexes()
+        let url = Self.libraryURL
+        try? FileManager.default.removeItem(at: url)
     }
 
     public func removeTrack(id: String) {

@@ -111,6 +111,7 @@ public final class PlayerViewModel: ObservableObject {
         .init(\.displayArtist, order: .forward)
     ]
     @Published public var showingCacheClearedAlert: Bool = false
+    @Published public var showingResetLibraryConfirmation: Bool = false
 
     // Track Metadata Inspector & Editor state
     @Published public var inspectingTrack: Track?
@@ -612,6 +613,27 @@ public final class PlayerViewModel: ObservableObject {
     public var favoriteTracks: [Track] {
         let trackMap = Dictionary(uniqueKeysWithValues: library.tracks.map { ($0.id, $0) })
         return playlists.favorites.compactMap { trackMap[$0] }
+    }
+
+    public func resetAndRescanLibrary() {
+        audio.clearCurrentTrack()
+        queue.removeAll()
+        originalQueue.removeAll()
+        selectedTrackIds.removeAll()
+        currentWaveform = nil
+        currentDynamicRange = .idle
+        dynamicRangeTask?.cancel()
+        dynamicRangeTask = nil
+
+        playlists.clearAllData()
+        health.clearAllOverridesAndIgnored()
+        Task {
+            await DynamicRangeEngine.shared.clearAllData()
+        }
+        library.clearAllData()
+        library.startSync(folders: config.libraryFolders, fullRescan: true)
+
+        showToast(icon: "arrow.clockwise", message: "Library reset. Rescanning \(config.libraryFolders.count) folder(s)…")
     }
 
     // MARK: - Resizable Columns

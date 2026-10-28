@@ -204,6 +204,11 @@ public actor DynamicRangeEngine {
         }
     }
 
+    public func clearAllData() {
+        persistentStore.removeAll()
+        savePersistentDatabase()
+    }
+
     /// Fast, non-blocking check for stored result (checks persistent database and track metadata)
     public func cachedResult(for track: Track) -> DynamicRangeResult? {
         reloadDatabaseIfNeeded()

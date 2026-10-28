@@ -22,6 +22,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var fileSize: UInt64?
     public var modifiedDate: Date?
     public var dynamicRange: Int?
+    public var playCount: Int?
 
     public init(
         id: String? = nil,
@@ -43,7 +44,8 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         hasCoverArt: Bool = false,
         fileSize: UInt64? = nil,
         modifiedDate: Date? = nil,
-        dynamicRange: Int? = nil
+        dynamicRange: Int? = nil,
+        playCount: Int? = nil
     ) {
         self.path = path
         self.id = id ?? Track.generateId(for: path)
@@ -65,12 +67,21 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.fileSize = fileSize
         self.modifiedDate = modifiedDate
         self.dynamicRange = dynamicRange
+        self.playCount = playCount
     }
 
     public static func generateId(for path: URL) -> String {
         let pathString = path.standardizedFileURL.path
         let digest = SHA256.hash(data: Data(pathString.utf8))
         return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16).description
+    }
+
+    public var playCountValue: Int {
+        playCount ?? 0
+    }
+
+    public var playCountSortKey: Int {
+        playCount ?? 0
     }
 
     public var dynamicRangeSortKey: Int {

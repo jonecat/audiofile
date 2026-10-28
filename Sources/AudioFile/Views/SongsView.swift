@@ -75,6 +75,20 @@ public struct SongsView: View {
             }
             .width(64)
 
+            TableColumn("Plays", value: \.playCountSortKey) { track in
+                let isSelected = vm.selectedTrackIds.contains(track.id)
+                let count = track.playCount ?? 0
+                HStack(spacing: 3) {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.8) : (count > 0 ? Color.secondary : Color.secondary.opacity(0.35)))
+                    Text("\(count)")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.9) : (count > 0 ? Color.secondary : Color.secondary.opacity(0.35)))
+                }
+            }
+            .width(min: 44, ideal: 52)
+
             TableColumn("DR", value: \.dynamicRangeSortKey) { track in
                 let isSelected = vm.selectedTrackIds.contains(track.id)
                 if let score = track.dynamicRange {

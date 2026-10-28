@@ -222,6 +222,15 @@ public final class AudioEngine: ObservableObject {
         updateNowPlayingInfo()
     }
 
+    public func clearCurrentTrack() {
+        stop()
+        currentTrack = nil
+        duration = 0
+        preloadedTrack = nil
+        preloadedFile = nil
+        updateNowPlayingInfo()
+    }
+
     public func seek(to time: TimeInterval, startPlaying: Bool = true) {
         guard let file = audioFile else { return }
         let targetTime = min(max(time, 0.0), duration)
