@@ -73,6 +73,10 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         return digest.compactMap { String(format: "%02x", $0) }.joined().prefix(16).description
     }
 
+    public var dynamicRangeSortKey: Int {
+        dynamicRange ?? 0
+    }
+
     public var displayTitle: String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }

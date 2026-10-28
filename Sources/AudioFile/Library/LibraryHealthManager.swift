@@ -8,6 +8,7 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
     case splitAlbums = "Split Albums"
     case missingLyrics = "Missing Lyrics"
     case duplicates = "Duplicates"
+    case dynamicRange = "Dynamic Range"
 
     public var id: String { rawValue }
 
@@ -23,6 +24,8 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
             return "songs without synced .lrc lyrics"
         case .duplicates:
             return "multiple copies of the same song"
+        case .dynamicRange:
+            return "songs without DR score"
         }
     }
 
@@ -38,12 +41,14 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
             return "quote.bubble"
         case .duplicates:
             return "doc.on.doc"
+        case .dynamicRange:
+            return "waveform.badge.magnifyingglass"
         }
     }
 
     public var supportsFindFixes: Bool {
         switch self {
-        case .missingInfo, .missingArtwork, .missingLyrics:
+        case .missingInfo, .missingArtwork, .missingLyrics, .dynamicRange:
             return true
         case .splitAlbums, .duplicates:
             return false
@@ -54,7 +59,7 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .missingInfo, .splitAlbums:
             return true
-        case .missingArtwork, .missingLyrics, .duplicates:
+        case .missingArtwork, .missingLyrics, .duplicates, .dynamicRange:
             return false
         }
     }
@@ -132,6 +137,13 @@ public final class LibraryHealthManager: ObservableObject {
     @Published public var checkCompletedMessage: String?
     @Published public var lastCheckedDate: Date?
 
+    private static let includeDRAnalysisKey = "audiofile_health_include_dr_analysis"
+    @Published public var includeDynamicRangeAnalysis: Bool {
+        didSet {
+            UserDefaults.standard.set(includeDynamicRangeAnalysis, forKey: Self.includeDRAnalysisKey)
+        }
+    }
+
     // Editing sheet state (stored on ObservableObject to avoid @State macro requirement)
     @Published public var editingIssue: HealthIssue?
     @Published public var editTitle: String = ""
@@ -160,6 +172,7 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public init() {
+        self.includeDynamicRangeAnalysis = UserDefaults.standard.bool(forKey: Self.includeDRAnalysisKey)
         loadOverrides()
         loadIgnoredIssues()
 
@@ -252,7 +265,7 @@ public final class LibraryHealthManager: ObservableObject {
     /// Number of songs with core health issues (missing info, missing artwork, split albums, or duplicates)
     public var songsNeedingAttentionCount: Int {
         var affectedTrackIds = Set<String>()
-        for issue in issues where issue.category != .missingLyrics {
+        for issue in issues where issue.category != .missingLyrics && issue.category != .dynamicRange {
             for id in issue.trackIds {
                 affectedTrackIds.insert(id)
             }
@@ -274,7 +287,7 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public var totalIssuesBadgeCount: Int {
-        issues.filter { $0.category != .missingLyrics }.count
+        issues.filter { $0.category != .missingLyrics && $0.category != .dynamicRange }.count
     }
 
     public func issues(for category: HealthIssueCategory) -> [HealthIssue] {
@@ -296,6 +309,14 @@ public final class LibraryHealthManager: ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(550))
             analyzeLibrary()
+
+            if includeDynamicRangeAnalysis {
+                let drIssues = issues(for: .dynamicRange)
+                if !drIssues.isEmpty {
+                    await runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
+                }
+            }
+
             progressText = ""
             checkCompletedMessage = "Health check complete"
             try? await Task.sleep(for: .seconds(2.5))
@@ -474,6 +495,29 @@ public final class LibraryHealthManager: ObservableObject {
             }
         }
 
+        // 6. Missing Dynamic Range
+        for track in tracks {
+            let issueId = "dr_\(track.id)"
+            guard !ignoredIssueIds.contains(issueId) else { continue }
+            if track.dynamicRange == nil {
+                if let prev = existingById[issueId], prev.fixFound {
+                    detected.append(prev)
+                } else {
+                    detected.append(HealthIssue(
+                        id: issueId,
+                        category: .dynamicRange,
+                        trackIds: [track.id],
+                        primaryTrack: track,
+                        duplicateTrack: nil,
+                        issueDescription: "No Dynamic Range score",
+                        currentSummary: "\(track.displayArtist) - \(track.displayTitle)",
+                        proposedSummary: "Measure Pleasurize TT DR Meter score",
+                        fixFound: false
+                    ))
+                }
+            }
+        }
+
         self.issues = detected
         self.lastCheckedDate = Date()
         self.isAnalyzing = false
@@ -624,6 +668,17 @@ public final class LibraryHealthManager: ObservableObject {
 
     public func findFixes(for category: HealthIssueCategory) {
         guard !isFindingFixes, category.supportsFindFixes else { return }
+
+        if category == .dynamicRange {
+            let drIssues = issues(for: .dynamicRange)
+            guard !drIssues.isEmpty else { return }
+            activeFindTask = Task { @MainActor in
+                await runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
+                activeFindTask = nil
+            }
+            return
+        }
+
         isFindingFixes = true
 
         activeFindTask = Task { @MainActor in
@@ -721,6 +776,89 @@ public final class LibraryHealthManager: ObservableObject {
         }
     }
 
+    public func runDynamicRangeBatchAnalysis(issuesToProcess: [HealthIssue]) async {
+        guard !isFindingFixes else { return }
+        isFindingFixes = true
+
+        let targetIssues = issuesToProcess.filter { !$0.fixFound }
+        let total = targetIssues.count
+        guard total > 0 else {
+            isFindingFixes = false
+            return
+        }
+
+        var completed = 0
+        var batchScores: [String: Int] = [:]
+        let concurrency = max(1, min(4, ProcessInfo.processInfo.activeProcessorCount))
+
+        await withTaskGroup(of: (String, Int?)?.self) { group in
+            var iterator = targetIssues.makeIterator()
+
+            for _ in 0..<concurrency {
+                if let next = iterator.next() {
+                    group.addTask {
+                        let res = await DynamicRangeEngine.shared.dynamicRange(for: next.primaryTrack)
+                        return (next.id, res?.score)
+                    }
+                }
+            }
+
+            while let result = await group.next() {
+                if Task.isCancelled { break }
+                if let (issueId, score) = result {
+                    completed += 1
+                    if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
+                        let track = self.issues[idx].primaryTrack
+                        if let s = score {
+                            batchScores[track.id] = s
+                            let cat = DynamicRangeEngine.ratingCategory(for: s)
+                            self.issues[idx].fixFound = true
+                            self.issues[idx].statusNote = "DR\(s) (\(cat.rawValue))"
+                            self.issues[idx].proposedSummary = "Dynamic Range: DR\(s)"
+                        } else {
+                            self.issues[idx].statusNote = "Analysis failed"
+                        }
+                        self.progressText = "Measuring DR (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
+                    }
+                }
+
+                if let next = iterator.next() {
+                    group.addTask {
+                        let res = await DynamicRangeEngine.shared.dynamicRange(for: next.primaryTrack)
+                        return (next.id, res?.score)
+                    }
+                }
+            }
+        }
+
+        if !batchScores.isEmpty {
+            LibraryManager.shared.updateTracksDynamicRange(scores: batchScores)
+        }
+
+        progressText = ""
+        isFindingFixes = false
+        analyzeLibrary()
+    }
+
+    public func analyzeDynamicRange(for issue: HealthIssue) {
+        guard !isFindingFixes else { return }
+        Task { @MainActor in
+            if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
+                issues[idx].isSearchingFix = true
+                let res = await DynamicRangeEngine.shared.dynamicRange(for: issue.primaryTrack, forceRecalculate: true)
+                if let s = res?.score {
+                    LibraryManager.shared.updateTrackDynamicRange(id: issue.primaryTrack.id, score: s)
+                    let cat = DynamicRangeEngine.ratingCategory(for: s)
+                    issues[idx].fixFound = true
+                    issues[idx].statusNote = "DR\(s) (\(cat.rawValue))"
+                    issues[idx].proposedSummary = "Dynamic Range: DR\(s)"
+                }
+                issues[idx].isSearchingFix = false
+                analyzeLibrary()
+            }
+        }
+    }
+
     // MARK: - Approve & Apply Fixes
 
     public func approveIssue(_ issue: HealthIssue) {
@@ -802,6 +940,9 @@ public final class LibraryHealthManager: ObservableObject {
                 ignoredIssueIds.insert(issue.id)
                 saveIgnoredIssues()
             }
+
+        case .dynamicRange:
+            break
         }
     }
 

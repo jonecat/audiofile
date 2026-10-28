@@ -90,6 +90,12 @@ public struct TrackMenuItems: View {
             vm.beginInspectingMetadata(for: track)
         }
 
+        Button("Measure Dynamic Range") {
+            Task {
+                _ = await DynamicRangeEngine.shared.dynamicRange(for: track, forceRecalculate: true)
+            }
+        }
+
         Button("Show in Finder") {
             NSWorkspace.shared.activateFileViewerSelecting([track.path])
         }
@@ -142,6 +148,14 @@ public struct TrackMenuItems: View {
         }
 
         Divider()
+
+        Button("Measure Dynamic Range (\(count) Songs)") {
+            Task {
+                for t in tracks {
+                    _ = await DynamicRangeEngine.shared.dynamicRange(for: t, forceRecalculate: true)
+                }
+            }
+        }
 
         Button("Show in Finder (\(count) Files)") {
             NSWorkspace.shared.activateFileViewerSelecting(tracks.map(\.path))

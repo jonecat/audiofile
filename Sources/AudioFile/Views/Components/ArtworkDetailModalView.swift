@@ -93,6 +93,10 @@ public struct ArtworkDetailModalView: View {
             // Artwork & Track Details Strip
             VStack(spacing: 8) {
                 HStack(spacing: 8) {
+                    if let dr = track.dynamicRange {
+                        DynamicRangeBadgeView(score: dr, compact: true)
+                    }
+
                     FormatBadgeView(format: track.format, isLossless: track.isLossless)
 
                     if let dims = imageDimensionsString {

@@ -203,7 +203,7 @@ public struct HealthView: View {
                             HStack(spacing: 6) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Stop Finding Fixes")
+                                Text(health.selectedCategory == .dynamicRange ? "Stop DR Analysis" : "Stop Finding Fixes")
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
@@ -217,8 +217,10 @@ public struct HealthView: View {
                             health.findFixes(for: health.selectedCategory)
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: "wand.and.stars")
-                                Text("Find \(health.selectedCategory.rawValue) Fixes")
+                                Image(systemName: health.selectedCategory == .dynamicRange ? "waveform.badge.magnifyingglass" : "wand.and.stars")
+                                Text(health.selectedCategory == .dynamicRange
+                                     ? "Analyze All Missing DR (\(currentIssues.count))"
+                                     : "Find \(health.selectedCategory.rawValue) Fixes")
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
@@ -226,7 +228,7 @@ public struct HealthView: View {
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
-                        .help("Search for fixes in \(health.selectedCategory.rawValue)")
+                        .help(health.selectedCategory == .dynamicRange ? "Measure Dynamic Range for all unanalyzed songs" : "Search for fixes in \(health.selectedCategory.rawValue)")
                     }
                 }
 
@@ -254,6 +256,40 @@ public struct HealthView: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
+
+            if health.selectedCategory == .dynamicRange {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(systemName: "gauge.with.needle.fill")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Color.accentColor)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Dynamic Range Analysis (Pleasurize Music Foundation TT DR Meter)")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Measures official TT DR dynamic range ratings (DR1–DR20+) using SIMD peak-to-RMS windowing. Because full audio decoding is required, this is an opt-in scan.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Toggle("Auto-analyze during Re-checks", isOn: $health.includeDynamicRangeAnalysis)
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                        .help("When enabled, clicking 'Re-check Library' will automatically measure Dynamic Range for all unanalyzed songs.")
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.accentColor.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 6)
+            }
 
             // Issue List for Selected Section
             if currentIssues.isEmpty {
@@ -336,6 +372,10 @@ private struct HealthIssueRowView: View {
                         .font(.system(size: 13, weight: .semibold))
                         .lineLimit(1)
 
+                    if let dr = issue.primaryTrack.dynamicRange {
+                        DynamicRangeBadgeView(score: dr, compact: true)
+                    }
+
                     FormatBadgeView(
                         format: issue.primaryTrack.format,
                         isLossless: issue.primaryTrack.isLossless
@@ -404,6 +444,19 @@ private struct HealthIssueRowView: View {
                     .buttonStyle(.glass)
                     .controlSize(.small)
                     .help("Customize tags before approving")
+                }
+
+                if issue.category == .dynamicRange && !issue.fixFound {
+                    Button {
+                        health.analyzeDynamicRange(for: issue)
+                    } label: {
+                        Label("Measure DR", systemImage: "waveform.badge.magnifyingglass")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(issue.isSearchingFix || health.isFindingFixes)
+                    .help("Measure Dynamic Range for this song")
                 }
 
                 Button {

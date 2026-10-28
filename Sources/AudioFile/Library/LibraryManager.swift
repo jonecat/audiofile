@@ -107,9 +107,16 @@ public final class LibraryManager: ObservableObject {
                     }
                     modified = true
                 }
-                let savedOverrides = LibraryHealthManager.readOverridesFromDisk()
+            }
+            let savedOverrides = LibraryHealthManager.readOverridesFromDisk()
+            let storedScores = DynamicRangeEngine.readStoredScores()
+            for i in loaded.indices {
                 if savedOverrides[loaded[i].id] != nil {
                     LibraryHealthManager.applyOverride(from: savedOverrides, to: &loaded[i])
+                }
+                if loaded[i].dynamicRange == nil, let s = storedScores[loaded[i].id] {
+                    loaded[i].dynamicRange = s
+                    modified = true
                 }
             }
             self.tracks = loaded
@@ -251,7 +258,10 @@ public final class LibraryManager: ObservableObject {
                         discoveredTracks.append(existing)
                     } else {
                         // New or modified file: read metadata
-                        if let track = await MetadataReader.readTrack(at: fileURL) {
+                        if var track = await MetadataReader.readTrack(at: fileURL) {
+                            if let existing = existingMap[filePath], let dr = existing.dynamicRange {
+                                track.dynamicRange = dr
+                            }
                             discoveredTracks.append(track)
                         }
                     }
@@ -311,9 +321,24 @@ public final class LibraryManager: ObservableObject {
         saveLibrary()
     }
 
-    public func updateTrackDynamicRange(id: String, score: Int) {
+    public func updateTrackDynamicRange(id: String, score: Int, saveImmediately: Bool = true) {
         if let idx = tracks.firstIndex(where: { $0.id == id }) {
             tracks[idx].dynamicRange = score
+            if saveImmediately {
+                saveLibrary()
+            }
+        }
+    }
+
+    public func updateTracksDynamicRange(scores: [String: Int]) {
+        var changed = false
+        for (id, score) in scores {
+            if let idx = tracks.firstIndex(where: { $0.id == id }) {
+                tracks[idx].dynamicRange = score
+                changed = true
+            }
+        }
+        if changed {
             saveLibrary()
         }
     }

@@ -122,11 +122,11 @@ private struct VisualizerHeaderView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    FormatBadgeView(format: track.format, isLossless: track.isLossless)
-
                     DynamicRangeBadgeView(state: vm.currentDynamicRange) {
                         vm.calculateDynamicRange(for: track, forceRecalculate: true)
                     }
+
+                    FormatBadgeView(format: track.format, isLossless: track.isLossless)
 
                     Text(track.qualityDescription)
                         .font(.system(size: 11, weight: .medium, design: .monospaced))

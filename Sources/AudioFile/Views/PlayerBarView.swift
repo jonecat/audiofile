@@ -179,10 +179,10 @@ private struct PlayerBarTrackInfoView: View {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        FormatBadgeView(format: t.format, isLossless: t.isLossless)
                         DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
                             vm.calculateDynamicRange(for: t, forceRecalculate: true)
                         }
+                        FormatBadgeView(format: t.format, isLossless: t.isLossless)
                         if let shortQuality = t.shortQualityDescription {
                             Text(shortQuality)
                                 .font(.system(size: 9, weight: .medium, design: .monospaced))

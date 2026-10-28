@@ -75,6 +75,18 @@ public struct SongsView: View {
             }
             .width(64)
 
+            TableColumn("DR", value: \.dynamicRangeSortKey) { track in
+                let isSelected = vm.selectedTrackIds.contains(track.id)
+                if let score = track.dynamicRange {
+                    DynamicRangeBadgeView(score: score, compact: true, isHighlighted: isSelected)
+                } else {
+                    Text("—")
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundColor(isSelected ? Color.white.opacity(0.5) : Color.secondary.opacity(0.5))
+                }
+            }
+            .width(52)
+
             TableColumn("Format", value: \.format) { track in
                 let isSelected = vm.selectedTrackIds.contains(track.id)
                 FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)

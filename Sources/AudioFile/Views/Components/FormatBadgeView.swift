@@ -14,13 +14,11 @@ public struct FormatBadgeView: View {
     public var body: some View {
         Text(format.uppercased())
             .font(.system(size: 9, weight: .bold, design: .monospaced))
-            .foregroundStyle(isHighlighted || isLossless ? Color.white : Color.primary.opacity(0.9))
+            .foregroundStyle(isHighlighted ? Color.white : Color.primary.opacity(0.9))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
             .glassEffect(
-                isHighlighted
-                    ? .clear
-                    : (isLossless ? .regular.tint(Color.accentColor) : .regular),
+                isHighlighted ? .clear : .regular,
                 in: .capsule
             )
             .help(tooltipText)

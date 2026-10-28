@@ -28,6 +28,10 @@ public struct TrackMetadataSheetView: View {
                         .lineLimit(1)
 
                     HStack(spacing: 8) {
+                        if let dr = track.dynamicRange {
+                            DynamicRangeBadgeView(score: dr, compact: true)
+                        }
+
                         FormatBadgeView(format: track.format, isLossless: track.isLossless)
 
                         if !track.qualityDescription.isEmpty {

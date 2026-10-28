@@ -161,6 +161,10 @@ public struct PlaylistsView: View {
 
                             Spacer()
 
+                            if let score = track.dynamicRange {
+                                DynamicRangeBadgeView(score: score, compact: true, isHighlighted: isSelected)
+                            }
+
                             FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)
 
                             Text(track.formattedDuration)

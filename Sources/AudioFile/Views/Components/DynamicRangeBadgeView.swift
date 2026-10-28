@@ -3,15 +3,30 @@ import SwiftUI
 public struct DynamicRangeBadgeView: View {
     public let state: DynamicRangeState
     public let compact: Bool
+    public let isHighlighted: Bool
     public let onAction: (() -> Void)?
 
     public init(
         state: DynamicRangeState,
         compact: Bool = false,
+        isHighlighted: Bool = false,
         onAction: (() -> Void)? = nil
     ) {
         self.state = state
         self.compact = compact
+        self.isHighlighted = isHighlighted
+        self.onAction = onAction
+    }
+
+    public init(
+        score: Int,
+        compact: Bool = true,
+        isHighlighted: Bool = false,
+        onAction: (() -> Void)? = nil
+    ) {
+        self.state = .ready(DynamicRangeResult.simple(score: score))
+        self.compact = compact
+        self.isHighlighted = isHighlighted
         self.onAction = onAction
     }
 
@@ -43,7 +58,9 @@ public struct DynamicRangeBadgeView: View {
             .padding(.horizontal, compact ? 6 : 7)
             .padding(.vertical, 2)
             .glassEffect(
-                .regular.tint(result.ratingCategory.color.opacity(0.85)),
+                isHighlighted
+                    ? .regular.tint(result.ratingCategory.color)
+                    : .regular.tint(result.ratingCategory.color.opacity(0.85)),
                 in: .capsule
             )
 
@@ -90,18 +107,21 @@ public struct DynamicRangeBadgeView: View {
         case .calculating:
             return """
             Dynamic Range: Measuring…
-            Analyzing audio stream (Peak vs RMS energy on demand).
+            Analyzing stream (Peak vs RMS energy).
             """
         case .idle:
             return """
             Dynamic Range: Not Measured Yet
-            Click to measure Dynamic Range on demand (Pleasurize Music Foundation standard).
+            Standard: Pleasurize TT DR Meter
+
+            Click to measure Dynamic Range on demand.
             """
         case .failed(let msg):
             return """
             Dynamic Range: Measurement Unavailable
-            Could not read stream: \(msg)
-            Click to retry.
+            Reason: \(msg)
+
+            Click badge to retry.
             """
         }
     }

@@ -62,7 +62,7 @@ public struct DynamicRangeResult: Codable, Sendable, Equatable, Hashable {
         return "DR\(score)"
     }
 
-    public var ratingCategory: DynamicRangeRatingCategory {
+    public static func ratingCategory(for score: Int) -> DynamicRangeRatingCategory {
         switch score {
         case 14...: return .audiophile
         case 11...13: return .great
@@ -72,21 +72,66 @@ public struct DynamicRangeResult: Codable, Sendable, Equatable, Hashable {
         }
     }
 
+    public var ratingCategory: DynamicRangeRatingCategory {
+        Self.ratingCategory(for: score)
+    }
+
+    public static func simple(score: Int) -> DynamicRangeResult {
+        return DynamicRangeResult(
+            score: score,
+            overallDR: Double(score),
+            channelDRs: [Double(score), Double(score)],
+            peakDb: 0.0,
+            channelPeakDbs: [0.0, 0.0],
+            rmsDb: -Double(score) - 3.0,
+            channelRmsDbs: [-Double(score) - 3.0, -Double(score) - 3.0],
+            sampleRate: 44100,
+            channels: 2
+        )
+    }
+
     public var tooltipText: String {
-        let chDRs = channelDRs.enumerated().map { "Ch\($0.offset + 1): \(String(format: "%.1f", $0.element)) dB" }.joined(separator: "  |  ")
-        let chPeaks = channelPeakDbs.enumerated().map { "Ch\($0.offset + 1): \(String(format: "%.2f", $0.element)) dBFS" }.joined(separator: "  |  ")
-        let chRMSs = channelRmsDbs.enumerated().map { "Ch\($0.offset + 1): \(String(format: "%.2f", $0.element)) dBFS" }.joined(separator: "  |  ")
+        var lines: [String] = [
+            "Dynamic Range: DR\(score)",
+            "Rating: \(ratingCategory.rawValue)",
+            "Standard: Pleasurize TT DR Meter"
+        ]
 
-        return """
-        Dynamic Range: DR\(score) (\(ratingCategory.rawValue))
-        Standard: Pleasurize Music Foundation (TT DR Meter)
+        var stats: [String] = []
 
-        • Track DR: \(String(format: "%.1f", overallDR)) dB (\(chDRs))
-        • Peak Level: \(String(format: "%.2f", peakDb)) dBFS (\(chPeaks))
-        • RMS Loudness (Top 20%): \(String(format: "%.2f", rmsDb)) dBFS (\(chRMSs))
+        if overallDR > 0 {
+            var drText = "• Track DR: \(String(format: "%.1f", overallDR)) dB"
+            if channelDRs.count > 1 {
+                let chDRs = channelDRs.enumerated().map { "Ch \($0.offset + 1): \(String(format: "%.1f", $0.element)) dB" }.joined(separator: "  |  ")
+                drText += "\n  \(chDRs)"
+            }
+            stats.append(drText)
+        }
 
-        Click badge to recalculate.
-        """
+        if peakDb != 0.0 || rmsDb != 0.0 {
+            var peakText = "• Peak Level: \(String(format: "%.2f", peakDb)) dBFS"
+            if channelPeakDbs.count > 1 {
+                let chPeaks = channelPeakDbs.enumerated().map { "Ch \($0.offset + 1): \(String(format: "%.2f", $0.element)) dBFS" }.joined(separator: "  |  ")
+                peakText += "\n  \(chPeaks)"
+            }
+            stats.append(peakText)
+
+            var rmsText = "• RMS Loudness (Top 20%): \(String(format: "%.2f", rmsDb)) dBFS"
+            if channelRmsDbs.count > 1 {
+                let chRMSs = channelRmsDbs.enumerated().map { "Ch \($0.offset + 1): \(String(format: "%.2f", $0.element)) dBFS" }.joined(separator: "  |  ")
+                rmsText += "\n  \(chRMSs)"
+            }
+            stats.append(rmsText)
+        }
+
+        if !stats.isEmpty {
+            lines.append("")
+            lines.append(stats.joined(separator: "\n\n"))
+        }
+
+        lines.append("")
+        lines.append("Click badge to recalculate.")
+        return lines.joined(separator: "\n")
     }
 }
 
@@ -111,6 +156,20 @@ public actor DynamicRangeEngine {
         let dir = appSupport.appendingPathComponent("AudioFile", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir.appendingPathComponent("dynamic_range_db.json")
+    }
+
+    /// Fast synchronous snapshot of stored scores for initial library population
+    public nonisolated static func readStoredScores() -> [String: Int] {
+        let url = databaseURL
+        guard let data = try? Data(contentsOf: url),
+              let decoded = try? JSONDecoder().decode([String: DynamicRangeResult].self, from: data) else {
+            return [:]
+        }
+        return decoded.mapValues(\.score)
+    }
+
+    public nonisolated static func ratingCategory(for score: Int) -> DynamicRangeRatingCategory {
+        DynamicRangeResult.ratingCategory(for: score)
     }
 
     public init() {

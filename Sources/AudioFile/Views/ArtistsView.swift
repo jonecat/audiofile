@@ -220,7 +220,12 @@ public struct ArtistsView: View {
 
                             Spacer()
 
-                            // Format Badge
+                            // DR Badge (DR first on the left)
+                            if let score = track.dynamicRange {
+                                DynamicRangeBadgeView(score: score, compact: true, isHighlighted: isSelected)
+                            }
+
+                            // Format Badge (file type to the right)
                             FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)
 
                             // Duration
