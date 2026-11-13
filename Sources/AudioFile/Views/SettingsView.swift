@@ -452,6 +452,17 @@ public struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Default Panels")
+                    .font(.headline)
+
+                Toggle("Show Track Info & Artwork by Default", isOn: $vm.showTrackInfo)
+                    .font(.system(size: 13))
+
+                Toggle("Show Visualizer Spectrum by Default", isOn: $vm.showVisualizer)
+                    .font(.system(size: 13))
+            }
+
             VStack(alignment: .leading, spacing: 8) {
                 Text("Target Frame Rate")
                     .font(.headline)

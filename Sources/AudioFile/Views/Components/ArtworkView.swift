@@ -39,6 +39,7 @@ public struct ArtworkView: View {
             if let image = loader.artwork {
                 Image(nsImage: image)
                     .resizable()
+                    .interpolation(.high)
                     .aspectRatio(contentMode: .fill)
             } else {
                 ZStack {

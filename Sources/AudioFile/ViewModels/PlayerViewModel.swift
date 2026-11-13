@@ -74,6 +74,12 @@ public final class PlayerViewModel: ObservableObject {
             config.save()
         }
     }
+    @Published public var showTrackInfo: Bool = true {
+        didSet {
+            config.showTrackInfo = showTrackInfo
+            config.save()
+        }
+    }
     @Published public var visualizerMode: VisualizerMode = .bars {
         didSet {
             config.visualizerMode = visualizerMode
@@ -164,6 +170,7 @@ public final class PlayerViewModel: ObservableObject {
         self.config.save()
         self.showLyrics = config.showLyrics
         self.showVisualizer = config.showVisualizer
+        self.showTrackInfo = config.showTrackInfo
         self.visualizerMode = config.visualizerMode
         self.visualizer.setMode(config.visualizerMode)
         self.lyricsScale = config.lyricsScale
@@ -526,6 +533,12 @@ public final class PlayerViewModel: ObservableObject {
 
     public func toggleShuffle() {
         shuffle.toggle()
+    }
+
+    public func toggleTrackInfo() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showTrackInfo.toggle()
+        }
     }
 
     public func toggleLyrics() {

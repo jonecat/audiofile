@@ -5,6 +5,7 @@ public struct LyricsCardView: View {
     public let window: LyricsWindow
     @Binding public var scale: Double
     public let isExpanded: Bool
+    public let showHeader: Bool
     public var onSeek: ((TimeInterval) -> Void)? = nil
 
     public init(
@@ -12,12 +13,14 @@ public struct LyricsCardView: View {
         window: LyricsWindow,
         scale: Binding<Double>,
         isExpanded: Bool = false,
+        showHeader: Bool = true,
         onSeek: ((TimeInterval) -> Void)? = nil
     ) {
         self.status = status
         self.window = window
         self._scale = scale
         self.isExpanded = isExpanded
+        self.showHeader = showHeader
         self.onSeek = onSeek
     }
 
@@ -29,31 +32,19 @@ public struct LyricsCardView: View {
         let s = cgScale
 
         VStack(alignment: .leading, spacing: 6) {
-            // Header outside card (matches Visualizer header style)
-            HStack(spacing: 10) {
-                Label("Lyrics", systemImage: "music.note.list")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.secondary)
-                    .textCase(.uppercase)
+            if showHeader {
+                // Header outside card (matches Visualizer header style)
+                HStack(spacing: 10) {
+                    Label("Lyrics", systemImage: "music.note.list")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.secondary)
+                        .textCase(.uppercase)
 
-                Spacer()
+                    Spacer()
 
-                // Text Size Slider
-                HStack(spacing: 6) {
-                    Image(systemName: "textformat.size.smaller")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(.secondary)
-
-                    Slider(value: $scale, in: 0.85...2.8)
-                        .tint(Color.accentColor)
-                        .frame(width: 110)
-                        .controlSize(.mini)
-
-                    Image(systemName: "textformat.size.larger")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.secondary)
+                    // Text Size Slider
+                    Self.scaleSlider(scale: $scale)
                 }
-                .help("Adjust lyrics text and card size")
             }
 
             // Presentation Area: switches between 5-Line Compact vs Full Dynamic Scroll
@@ -67,6 +58,25 @@ public struct LyricsCardView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: isExpanded ? .infinity : nil)
+    }
+
+    @ViewBuilder
+    public static func scaleSlider(scale: Binding<Double>) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "textformat.size.smaller")
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            Slider(value: scale, in: 0.85...2.8)
+                .tint(Color.accentColor)
+                .frame(width: 100)
+                .controlSize(.mini)
+
+            Image(systemName: "textformat.size.larger")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .help("Adjust lyrics text and card size")
     }
 
     // MARK: - Compact 5-Line Presentation (When Visualizer is Active)

@@ -176,10 +176,20 @@ struct AudioFileApp: App {
                 }
                 .keyboardShortcut("r", modifiers: [])
 
+                Button("Toggle Track Info") {
+                    vm.toggleTrackInfo()
+                }
+                .keyboardShortcut("i", modifiers: [])
+
                 Button("Toggle Lyrics") {
                     vm.toggleLyrics()
                 }
                 .keyboardShortcut("l", modifiers: [])
+
+                Button("Toggle Visualizer") {
+                    vm.toggleVisualizer()
+                }
+                .keyboardShortcut("v", modifiers: [])
 
                 Button("Favorite") {
                     vm.toggleFavoriteSelectedOrCurrentTrack()

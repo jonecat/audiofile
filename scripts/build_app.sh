@@ -42,8 +42,9 @@ if [ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]; then
 fi
 
 echo "Signing application ad-hoc..."
-dot_clean -m "${APP_DIR}" 2>/dev/null || true
-xattr -cr "${APP_DIR}" 2>/dev/null || true
+xattr -rc "${APP_DIR}" 2>/dev/null || true
+xattr -d com.apple.FinderInfo "${APP_DIR}" 2>/dev/null || true
+dot_clean "${APP_DIR}" 2>/dev/null || true
 codesign --force --deep --sign - "${APP_DIR}"
 
 echo "Packaging release archive AudioFile.app.zip..."

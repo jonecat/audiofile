@@ -54,6 +54,7 @@ public struct AppConfig: Codable, Sendable {
     public var visualizerMode: VisualizerMode
     public var showLyrics: Bool
     public var showVisualizer: Bool
+    public var showTrackInfo: Bool
     public var lyricsScale: Double
     public var autoFetchLyrics: Bool
     public var artistsColumnWidth: Double
@@ -68,6 +69,7 @@ public struct AppConfig: Codable, Sendable {
         visualizerMode: VisualizerMode = .bars,
         showLyrics: Bool = true,
         showVisualizer: Bool = true,
+        showTrackInfo: Bool = true,
         lyricsScale: Double = 1.0,
         autoFetchLyrics: Bool = true,
         artistsColumnWidth: Double = 220.0,
@@ -81,6 +83,7 @@ public struct AppConfig: Codable, Sendable {
         self.visualizerMode = visualizerMode
         self.showLyrics = showLyrics
         self.showVisualizer = showVisualizer
+        self.showTrackInfo = showTrackInfo
         self.lyricsScale = lyricsScale
         self.autoFetchLyrics = autoFetchLyrics
         self.artistsColumnWidth = artistsColumnWidth
@@ -97,6 +100,7 @@ public struct AppConfig: Codable, Sendable {
         self.visualizerMode = (try? container.decodeIfPresent(VisualizerMode.self, forKey: .visualizerMode)) ?? .bars
         self.showLyrics = try container.decodeIfPresent(Bool.self, forKey: .showLyrics) ?? true
         self.showVisualizer = try container.decodeIfPresent(Bool.self, forKey: .showVisualizer) ?? true
+        self.showTrackInfo = try container.decodeIfPresent(Bool.self, forKey: .showTrackInfo) ?? true
         self.lyricsScale = try container.decodeIfPresent(Double.self, forKey: .lyricsScale) ?? 1.0
         self.autoFetchLyrics = try container.decodeIfPresent(Bool.self, forKey: .autoFetchLyrics) ?? true
         self.artistsColumnWidth = try container.decodeIfPresent(Double.self, forKey: .artistsColumnWidth) ?? 220.0
