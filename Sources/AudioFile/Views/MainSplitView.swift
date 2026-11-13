@@ -22,6 +22,8 @@ public struct MainSplitView: View {
                     HealthView(vm: vm)
                 case .visualizer:
                     VisualizerView(vm: vm)
+                case .opticalDisc:
+                    OpticalDiscView(vm: vm)
                 case .favorites, .recentlyPlayed, .playlist:
                     PlaylistsView(vm: vm, section: vm.selectedSection)
                 case .settings:

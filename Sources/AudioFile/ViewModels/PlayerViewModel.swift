@@ -8,6 +8,7 @@ public enum NavigationSection: Hashable, Sendable {
     case songs
     case health
     case visualizer
+    case opticalDisc
     case favorites
     case recentlyPlayed
     case playlist(String) // playlist ID
@@ -16,6 +17,7 @@ public enum NavigationSection: Hashable, Sendable {
 
 public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     case library = "Library"
+    case cdDrive = "CD Drive"
     case audio = "Audio"
     case visualizer = "Visualizer"
     case lyrics = "Lyrics"
@@ -26,6 +28,7 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     public var icon: String {
         switch self {
         case .library: return "folder"
+        case .cdDrive: return "opticaldisc"
         case .audio: return "speaker.wave.2"
         case .visualizer: return "waveform.path"
         case .lyrics: return "quote.bubble"
@@ -147,6 +150,7 @@ public final class PlayerViewModel: ObservableObject {
     public let lyrics = LyricsManager.shared
     public let visualizer = VisualizerState.shared
     public let updater = AppUpdater.shared
+    public let opticalDiscManager = OpticalDiscManager.shared
     @Published public var config: AppConfig
 
     private var originalQueue: [Track] = []
@@ -252,6 +256,32 @@ public final class PlayerViewModel: ObservableObject {
                     self.currentDynamicRange = .idle
                     self.dynamicRangeTask?.cancel()
                     self.dynamicRangeTask = nil
+                }
+            }
+            .store(in: &cancellables)
+
+        // Optical Disc detection & ejection handling
+        opticalDiscManager.objectWillChange
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+
+        opticalDiscManager.$detectedDisc
+            .receive(on: RunLoop.main)
+            .sink { [weak self] disc in
+                guard let self = self else { return }
+                if let d = disc {
+                    let discName = d.title.isEmpty ? "Audio CD" : d.title
+                    self.showToast(icon: "opticaldisc", message: "Audio CD Detected: \(discName)")
+                } else {
+                    if self.selectedSection == .opticalDisc {
+                        self.selectedSection = .songs
+                    }
+                    if let cur = self.audio.currentTrack, cur.id.hasPrefix("optical_") {
+                        self.audio.stop()
+                    }
                 }
             }
             .store(in: &cancellables)

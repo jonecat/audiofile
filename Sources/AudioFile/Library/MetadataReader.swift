@@ -217,6 +217,19 @@ public struct MetadataReader: Sendable {
     }
 
     public static func loadArtwork(for track: Track) async -> NSImage? {
+        // 0. If this is an optical disc track, load the disc artwork
+        if track.id.hasPrefix("optical_") || track.format == "CDDA" {
+            let discArt = await MainActor.run {
+                if let data = OpticalDiscManager.shared.detectedDisc?.artworkData {
+                    return NSImage(data: data)
+                }
+                return nil
+            }
+            if let discArt = discArt {
+                return discArt
+            }
+        }
+
         let parentDir = track.path.deletingLastPathComponent()
 
         // 1. Check folder artwork first (often higher resolution and faster to load)

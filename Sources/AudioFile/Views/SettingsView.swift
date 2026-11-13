@@ -51,6 +51,8 @@ public struct SettingsView: View {
                 switch vm.selectedSettingsTab {
                 case .library:
                     libraryTab
+                case .cdDrive:
+                    cdDriveTab
                 case .audio:
                     audioTab
                 case .visualizer:
@@ -266,6 +268,99 @@ public struct SettingsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Tab: CD Drive & Optical Ripping
+
+    private var cdDriveTab: some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Optical CD Drive & Accurate Ripping")
+                    .font(.title3.weight(.bold))
+                Text("Bit-perfect CDDA audio reading, disc playback, MusicBrainz metadata, and Whipper-grade AccurateRip verification.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            // Hardware Drive Status
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Optical Drive Status")
+                    .font(.headline)
+
+                GlassEffectContainer(spacing: 8) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Image(systemName: "opticaldisc")
+                                .font(.system(size: 18))
+                                .foregroundColor(vm.opticalDiscManager.isDiscDetected ? .accentColor : .secondary)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vm.opticalDiscManager.connectedDriveName ?? "Optical Drive")
+                                    .font(.system(size: 13, weight: .semibold))
+
+                                if let disc = vm.opticalDiscManager.detectedDisc {
+                                    Text("Disc Present: \(disc.title) — \(disc.artist) (\(disc.tracks.count) tracks)")
+                                        .font(.caption)
+                                        .foregroundColor(.accentColor)
+                                } else {
+                                    Text("No optical disc currently inserted")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            if vm.opticalDiscManager.isDiscDetected {
+                                Button("Eject") {
+                                    vm.opticalDiscManager.eject()
+                                }
+                                .buttonStyle(.glass)
+                                .controlSize(.small)
+                            }
+
+                            Button {
+                                vm.opticalDiscManager.checkForInsertedDisc()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.glass)
+                            .controlSize(.small)
+                            .help("Scan for optical drives and media")
+                        }
+                    }
+                    .padding(14)
+                }
+            }
+
+            // AccurateRip & Encoding Info
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Rip Accuracy & Encoding Standards")
+                    .font(.headline)
+
+                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 8) {
+                    GridRow {
+                        Text("Accuracy Verification:").foregroundColor(.secondary)
+                        Text("AccurateRip v1/v2 & IEEE 802.3 CRC-32 (Whipper / EAC standard)")
+                    }
+                    GridRow {
+                        Text("Supported Encoders:").foregroundColor(.secondary)
+                        Text("FLAC (Lossless), ALAC (Lossless), Opus, Ogg Vorbis, WAV, WavPack, MP3")
+                    }
+                    GridRow {
+                        Text("Directory Hierarchy:").foregroundColor(.secondary)
+                        Text("Standard Artist / Album / Track - Song.ext")
+                    }
+                    GridRow {
+                        Text("Cover Artwork:").foregroundColor(.secondary)
+                        Text("Cover Art Archive & High-Resolution Artwork (cover.jpg)")
+                    }
+                }
+                .font(.system(size: 12))
             }
 
             Spacer()

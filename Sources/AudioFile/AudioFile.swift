@@ -204,25 +204,62 @@ struct AudioFileApp: App {
                 }
                 .keyboardShortcut("3", modifiers: .command)
 
-                Button("Visualizer / Now Playing") {
-                    vm.selectedSection = .visualizer
+                if vm.opticalDiscManager.isDiscDetected {
+                    Button("Audio CD") {
+                        vm.selectedSection = .opticalDisc
+                    }
+                    .keyboardShortcut("d", modifiers: .command)
                 }
-                .keyboardShortcut("4", modifiers: .command)
 
                 Button("Library Health") {
                     vm.selectedSection = .health
+                }
+                .keyboardShortcut("4", modifiers: .command)
+
+                Button("Visualizer / Now Playing") {
+                    vm.selectedSection = .visualizer
                 }
                 .keyboardShortcut("5", modifiers: .command)
 
                 Button("Favorites") {
                     vm.selectedSection = .favorites
                 }
-                .keyboardShortcut("5", modifiers: .command)
+                .keyboardShortcut("6", modifiers: .command)
 
                 Button("Recently Played") {
                     vm.selectedSection = .recentlyPlayed
                 }
-                .keyboardShortcut("6", modifiers: .command)
+                .keyboardShortcut("7", modifiers: .command)
+            }
+
+            // Optical Disc Menu
+            CommandMenu("Disc") {
+                if let disc = vm.opticalDiscManager.detectedDisc {
+                    Button("View Audio CD (\(disc.title))") {
+                        vm.selectedSection = .opticalDisc
+                    }
+
+                    Button("Play Audio CD") {
+                        let tracks = vm.opticalDiscManager.makeAllPlayableTracks()
+                        if let first = tracks.first {
+                            vm.playTrack(first, in: tracks)
+                        }
+                    }
+
+                    Divider()
+
+                    Button("Eject Disc") {
+                        vm.opticalDiscManager.eject()
+                    }
+                    .keyboardShortcut("e", modifiers: .command)
+                } else {
+                    Button("No Optical Disc Detected") {}
+                        .disabled(true)
+
+                    Button("Check for Disc") {
+                        vm.opticalDiscManager.checkForInsertedDisc()
+                    }
+                }
             }
         }
     }

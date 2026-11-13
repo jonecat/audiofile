@@ -5,6 +5,7 @@ public struct SidebarView: View {
     @ObservedObject var vm: PlayerViewModel
     @ObservedObject var library = LibraryManager.shared
     @ObservedObject var health = LibraryHealthManager.shared
+    @ObservedObject var opticalManager = OpticalDiscManager.shared
 
     public init(vm: PlayerViewModel) {
         self.vm = vm
@@ -44,6 +45,18 @@ public struct SidebarView: View {
                             Spacer()
                             if !library.tracks.isEmpty {
                                 Text("\(library.tracks.count)")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+
+                    if let disc = opticalManager.detectedDisc {
+                        NavigationLink(value: NavigationSection.opticalDisc) {
+                            HStack {
+                                Label(disc.title.isEmpty ? "Audio CD" : disc.title, systemImage: "opticaldisc")
+                                Spacer()
+                                Text("\(disc.tracks.count)")
                                     .font(.system(size: 11, design: .monospaced))
                                     .foregroundColor(.secondary)
                             }
