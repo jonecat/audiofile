@@ -149,6 +149,7 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var selectedSettingsTab: SettingsTab = .library
     @Published public var showingAbout: Bool = false
     @Published public var showingNewPlaylistDialog: Bool = false
+    @Published public var isHoveringAddPlaylist: Bool = false
     @Published public var newPlaylistName: String = ""
     @Published public var playlistPendingDeletion: Playlist?
     @Published public var selectedArtist: String?

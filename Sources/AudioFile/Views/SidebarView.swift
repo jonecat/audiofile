@@ -179,10 +179,19 @@ public struct SidebarView: View {
                         } label: {
                             Image(systemName: "plus")
                                 .font(.system(size: 11, weight: .semibold))
-                                .frame(width: 18, height: 18)
-                                .contentShape(Rectangle())
+                                .foregroundStyle(vm.isHoveringAddPlaylist ? Color.primary : Color.secondary)
+                                .frame(width: 20, height: 20)
+                                .background(
+                                    Circle()
+                                        .fill(Color.primary.opacity(vm.isHoveringAddPlaylist ? 0.14 : 0))
+                                )
+                                .contentShape(Circle())
+                                .animation(.easeInOut(duration: 0.15), value: vm.isHoveringAddPlaylist)
                         }
                         .buttonStyle(.plain)
+                        .onHover { hovering in
+                            vm.isHoveringAddPlaylist = hovering
+                        }
                         .help("Create New Playlist")
                     }
                     .padding(.trailing, 10)
