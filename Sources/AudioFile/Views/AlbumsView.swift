@@ -58,136 +58,6 @@ public struct AlbumsView: View {
             }
             .padding(24)
         }
-        .sheet(item: $vm.selectedAlbumDetail) { album in
-            VStack(spacing: 0) {
-                // Header with Album Art & Details
-                HStack(alignment: .top, spacing: 20) {
-                    ArtworkView(track: album.sampleTrack, cornerRadius: 10, shadowRadius: 6, maxPixelSize: 320)
-                        .frame(width: 120, height: 120)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(album.title)
-                            .font(.title2.weight(.bold))
-                            .lineLimit(2)
-                            .padding(.trailing, 32)
-
-                        if !album.artist.isEmpty && UUID(uuidString: album.artist) == nil {
-                            Text(album.artist)
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
-                        }
-
-                        HStack(spacing: 8) {
-                            if let y = album.year {
-                                Text(String(y))
-                                Text("•")
-                            }
-                            Text("\(album.trackCount) tracks")
-                            Text("•")
-                            FormatBadgeView(format: album.sampleTrack.format, isLossless: album.sampleTrack.isLossless)
-                        }
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-
-                        Button {
-                            let tracks = vm.library.tracks(for: album.artist, album: album.title)
-                            if let first = tracks.first {
-                                vm.playTrack(first, in: tracks)
-                            }
-                        } label: {
-                            Label("Play Album", systemImage: "play.fill")
-                        }
-                        .buttonStyle(.glassProminent)
-                        .controlSize(.regular)
-                        .help("Play all tracks in \(album.title)")
-                    }
-
-                    Spacer()
-                }
-                .padding(20)
-                .glassEffect(.regular, in: .rect(cornerRadius: 16))
-                .overlay(alignment: .topTrailing) {
-                    Button {
-                        vm.selectedAlbumDetail = nil
-                    } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 11, weight: .bold))
-                            .frame(width: 26, height: 26)
-                    }
-                    .buttonStyle(.glass)
-                    .buttonBorderShape(.circle)
-                    .keyboardShortcut(.cancelAction)
-                    .help("Close Album Details (Esc)")
-                    .padding(12)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                .padding(.bottom, 8)
-
-                // Tracklist
-                let trackList = vm.library.tracks(for: album.artist, album: album.title)
-                List(trackList, selection: $vm.selectedTrackIds) { track in
-                    let isPlaying = (vm.audio.currentTrack?.id == track.id)
-                    let isSelected = vm.selectedTrackIds.contains(track.id)
-
-                    HStack(spacing: 12) {
-                        if let num = track.trackNumber {
-                            Text("\(num)")
-                                .font(.system(size: 12, design: .monospaced))
-                                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
-                                .frame(width: 24, alignment: .trailing)
-                        } else {
-                            Text("-")
-                                .font(.system(size: 12))
-                                .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
-                                .frame(width: 24, alignment: .trailing)
-                        }
-
-                        HStack(spacing: 6) {
-                            Text(track.displayTitle)
-                                .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
-                                .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
-
-                            if vm.playlists.isFavorite(trackId: track.id) {
-                                Image(systemName: "star.fill")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(isSelected ? Color.white.opacity(0.9) : Color.accentColor)
-                            }
-                        }
-
-                        Spacer()
-
-                        Text(track.formattedDuration)
-                            .font(.system(size: 12, design: .monospaced))
-                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
-
-                        TrackKebabMenuButton(vm: vm, track: track, trackList: trackList, isHighlighted: isSelected)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .tag(track.id)
-                }
-                .listStyle(.plain)
-                .defaultScrollAnchor(.top)
-                .id("album_detail_\(album.id)")
-                .contextMenu(forSelectionType: String.self) { selection in
-                    let selectedTracks = trackList.filter { selection.contains($0.id) }
-                    if !selectedTracks.isEmpty {
-                        TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: trackList)
-                    }
-                } primaryAction: { selection in
-                    if let trackId = selection.first,
-                       let track = trackList.first(where: { $0.id == trackId }) {
-                        vm.playTrack(track, in: trackList)
-                    }
-                }
-            }
-            .frame(width: 540, height: 480)
-            .sheet(item: $vm.inspectingTrack) { inspectedTrack in
-                TrackMetadataSheetView(vm: vm, track: inspectedTrack)
-            }
-        }
     }
 
     private var filteredAlbums: [LibraryManager.AlbumInfo] {
@@ -197,6 +67,147 @@ public struct AlbumsView: View {
         return vm.library.allAlbums.filter {
             $0.title.localizedCaseInsensitiveContains(vm.searchQuery) ||
             $0.artist.localizedCaseInsensitiveContains(vm.searchQuery)
+        }
+    }
+}
+
+public struct AlbumDetailSheetView: View {
+    @ObservedObject var vm: PlayerViewModel
+    public let album: LibraryManager.AlbumInfo
+
+    public init(vm: PlayerViewModel, album: LibraryManager.AlbumInfo) {
+        self.vm = vm
+        self.album = album
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            // Header with Album Art & Details
+            HStack(alignment: .top, spacing: 20) {
+                ArtworkView(track: album.sampleTrack, cornerRadius: 10, shadowRadius: 6, maxPixelSize: 320)
+                    .frame(width: 120, height: 120)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(album.title)
+                        .font(.title2.weight(.bold))
+                        .lineLimit(2)
+                        .padding(.trailing, 32)
+
+                    if !album.artist.isEmpty && UUID(uuidString: album.artist) == nil {
+                        Text(album.artist)
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+
+                    HStack(spacing: 8) {
+                        if let y = album.year {
+                            Text(String(y))
+                            Text("•")
+                        }
+                        Text("\(album.trackCount) tracks")
+                        Text("•")
+                        FormatBadgeView(format: album.sampleTrack.format, isLossless: album.sampleTrack.isLossless)
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                    Button {
+                        let tracks = vm.library.tracks(for: album.artist, album: album.title)
+                        if let first = tracks.first {
+                            vm.playTrack(first, in: tracks)
+                        }
+                    } label: {
+                        Label("Play Album", systemImage: "play.fill")
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.regular)
+                    .help("Play all tracks in \(album.title)")
+                }
+
+                Spacer()
+            }
+            .padding(20)
+            .glassEffect(.regular, in: .rect(cornerRadius: 16))
+            .overlay(alignment: .topTrailing) {
+                Button {
+                    vm.selectedAlbumDetail = nil
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
+                        .frame(width: 26, height: 26)
+                }
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .keyboardShortcut(.cancelAction)
+                .help("Close Album Details (Esc)")
+                .padding(12)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 16)
+            .padding(.bottom, 8)
+
+            // Tracklist
+            let trackList = vm.library.tracks(for: album.artist, album: album.title)
+            List(trackList, selection: $vm.selectedTrackIds) { track in
+                let isPlaying = (vm.audio.currentTrack?.id == track.id)
+                let isSelected = vm.selectedTrackIds.contains(track.id)
+
+                HStack(spacing: 12) {
+                    if let num = track.trackNumber {
+                        Text("\(num)")
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+                            .frame(width: 24, alignment: .trailing)
+                    } else {
+                        Text("-")
+                            .font(.system(size: 12))
+                            .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+                            .frame(width: 24, alignment: .trailing)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(track.displayTitle)
+                            .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
+
+                        if vm.playlists.isFavorite(trackId: track.id) {
+                            Image(systemName: "star.fill")
+                                .font(.system(size: 10))
+                                .foregroundStyle(isSelected ? Color.white.opacity(0.9) : Color.accentColor)
+                        }
+                    }
+
+                    Spacer()
+
+                    Text(track.formattedDuration)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
+
+                    TrackKebabMenuButton(vm: vm, track: track, trackList: trackList, isHighlighted: isSelected)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .tag(track.id)
+            }
+            .listStyle(.plain)
+            .defaultScrollAnchor(.top)
+            .id("album_detail_\(album.id)")
+            .contextMenu(forSelectionType: String.self) { selection in
+                let selectedTracks = trackList.filter { selection.contains($0.id) }
+                if !selectedTracks.isEmpty {
+                    TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: trackList)
+                }
+            } primaryAction: { selection in
+                if let trackId = selection.first,
+                   let track = trackList.first(where: { $0.id == trackId }) {
+                    vm.playTrack(track, in: trackList)
+                }
+            }
+        }
+        .frame(width: 540, height: 480)
+        .sheet(item: $vm.inspectingTrack) { inspectedTrack in
+            TrackMetadataSheetView(vm: vm, track: inspectedTrack)
         }
     }
 }

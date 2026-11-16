@@ -11,23 +11,27 @@ public struct MainSplitView: View {
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
             Group {
-                switch vm.selectedSection {
-                case .artists:
-                    ArtistsView(vm: vm)
-                case .albums:
-                    AlbumsView(vm: vm)
-                case .songs:
-                    SongsView(vm: vm)
-                case .health:
-                    HealthView(vm: vm)
-                case .visualizer:
-                    VisualizerView(vm: vm)
-                case .opticalDisc:
-                    OpticalDiscView(vm: vm)
-                case .favorites, .recentlyPlayed, .playlist:
-                    PlaylistsView(vm: vm, section: vm.selectedSection)
-                case .settings:
-                    SongsView(vm: vm)
+                if vm.isSearching {
+                    SearchResultsView(vm: vm)
+                } else {
+                    switch vm.selectedSection {
+                    case .artists:
+                        ArtistsView(vm: vm)
+                    case .albums:
+                        AlbumsView(vm: vm)
+                    case .songs:
+                        SongsView(vm: vm)
+                    case .health:
+                        HealthView(vm: vm)
+                    case .visualizer:
+                        VisualizerView(vm: vm)
+                    case .opticalDisc:
+                        OpticalDiscView(vm: vm)
+                    case .favorites, .recentlyPlayed, .playlist:
+                        PlaylistsView(vm: vm, section: vm.selectedSection)
+                    case .settings:
+                        SongsView(vm: vm)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -52,7 +56,7 @@ public struct MainSplitView: View {
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.currentToast)
         }
-        .searchable(text: $vm.searchQuery, prompt: "Search artists, albums, songs…")
+        .searchable(text: $vm.searchQuery, prompt: "Search artists, albums, songs, playlists…")
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 Button {
@@ -72,6 +76,9 @@ public struct MainSplitView: View {
         }
         .sheet(isPresented: $vm.showingSettings) {
             SettingsView(vm: vm)
+        }
+        .sheet(item: $vm.selectedAlbumDetail) { album in
+            AlbumDetailSheetView(vm: vm, album: album)
         }
         .sheet(
             isPresented: Binding(

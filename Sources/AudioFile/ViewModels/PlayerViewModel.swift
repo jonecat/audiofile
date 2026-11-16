@@ -37,6 +37,16 @@ public enum SettingsTab: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+public enum SearchCategoryFilter: String, CaseIterable, Identifiable, Sendable {
+    case all = "All"
+    case artists = "Artists"
+    case albums = "Albums"
+    case songs = "Songs"
+    case playlists = "Playlists"
+
+    public var id: String { rawValue }
+}
+
 @MainActor
 public final class PlayerViewModel: ObservableObject {
     public static let shared = PlayerViewModel()
@@ -44,6 +54,28 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var selectedSection: NavigationSection = .artists
     @Published public var searchQuery: String = ""
     @Published public var isSearchPresented: Bool = false
+    @Published public var searchCategoryFilter: SearchCategoryFilter = .all
+    @Published public var searchShowAllArtists: Bool = false
+
+    public var isSearching: Bool {
+        !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public var sidebarSelectionBinding: Binding<NavigationSection?> {
+        Binding(
+            get: { self.isSearching ? nil : self.selectedSection },
+            set: { newSection in
+                if let section = newSection {
+                    self.selectedSection = section
+                    if !self.searchQuery.isEmpty {
+                        self.searchQuery = ""
+                        self.searchCategoryFilter = .all
+                        self.updateFilteredTracks()
+                    }
+                }
+            }
+        )
+    }
 
     @Published public var queue: [Track] = []
     @Published public var currentQueueIndex: Int = -1
@@ -155,6 +187,9 @@ public final class PlayerViewModel: ObservableObject {
 
     @Published public private(set) var filteredTracks: [Track] = []
     @Published public private(set) var sortedTracks: [Track] = []
+    @Published public private(set) var searchMatchingArtists: [String] = []
+    @Published public private(set) var searchMatchingAlbums: [LibraryManager.AlbumInfo] = []
+    @Published public private(set) var searchMatchingPlaylists: [Playlist] = []
 
     @Published public var currentWaveform: WaveformData?
     @Published public var currentDynamicRange: DynamicRangeState = .idle
@@ -236,11 +271,27 @@ public final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Search query updates -> debounced filter
+        // Search query updates -> immediate reset when cleared, debounced filter while typing
         $searchQuery
+            .dropFirst()
+            .receive(on: RunLoop.main)
+            .sink { [weak self] query in
+                if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self?.searchCategoryFilter = .all
+                    self?.searchShowAllArtists = false
+                    self?.updateFilteredTracks(query: query)
+                }
+            }
+            .store(in: &cancellables)
+
+        $searchQuery
+            .dropFirst()
             .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateFilteredTracks()
+            .sink { [weak self] query in
+                if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    self?.searchShowAllArtists = false
+                    self?.updateFilteredTracks(query: query)
+                }
             }
             .store(in: &cancellables)
 
@@ -828,18 +879,61 @@ public final class PlayerViewModel: ObservableObject {
 
     // MARK: - Search Filtering & Sorting
 
+    public func clearSearch() {
+        searchQuery = ""
+        searchCategoryFilter = .all
+        searchShowAllArtists = false
+        updateFilteredTracks()
+    }
+
+    public func openArtistFromSearch(_ artist: String) {
+        selectedArtist = artist
+        selectedAlbum = nil
+        selectedSection = .artists
+        searchQuery = ""
+        searchCategoryFilter = .all
+        searchShowAllArtists = false
+        updateFilteredTracks()
+    }
+
+    public func openAlbumFromSearch(_ album: LibraryManager.AlbumInfo) {
+        selectedAlbumDetail = album
+    }
+
+    public func openPlaylistFromSearch(_ playlist: Playlist) {
+        selectedSection = .playlist(playlist.id)
+        searchQuery = ""
+        searchCategoryFilter = .all
+        searchShowAllArtists = false
+        updateFilteredTracks()
+    }
+
     public func updateFilteredAndSortedTracks() {
         updateFilteredTracks()
     }
 
-    public func updateFilteredTracks() {
-        let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    public func updateFilteredTracks(query: String? = nil) {
+        let trimmed = (query ?? searchQuery).trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered: [Track]
         if trimmed.isEmpty {
             filtered = library.tracks
+            self.searchMatchingArtists = []
+            self.searchMatchingAlbums = []
+            self.searchMatchingPlaylists = []
         } else {
             let q = trimmed.lowercased()
             filtered = library.tracks.filter { $0.searchHaystack.contains(q) }
+            self.searchMatchingArtists = library.uniqueArtists.filter {
+                $0.localizedCaseInsensitiveContains(trimmed)
+            }
+            self.searchMatchingAlbums = library.allAlbums.filter {
+                $0.title.localizedCaseInsensitiveContains(trimmed) ||
+                $0.artist.localizedCaseInsensitiveContains(trimmed)
+            }
+            self.searchMatchingPlaylists = playlists.playlists.filter { pl in
+                pl.name.localizedCaseInsensitiveContains(trimmed) ||
+                pl.trackIds.contains(where: { library.track(forId: $0)?.searchHaystack.contains(q) == true })
+            }
         }
         self.filteredTracks = filtered
         updateSortedTracks()

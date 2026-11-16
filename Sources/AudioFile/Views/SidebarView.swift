@@ -13,7 +13,7 @@ public struct SidebarView: View {
 
     public var body: some View {
         VStack(spacing: 0) {
-            List(selection: $vm.selectedSection) {
+            List(selection: vm.sidebarSelectionBinding) {
                 Section("Library") {
                     NavigationLink(value: NavigationSection.artists) {
                         HStack {
