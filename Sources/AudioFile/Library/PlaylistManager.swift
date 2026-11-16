@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import AppKit
+import UniformTypeIdentifiers
 
 @MainActor
 public final class PlaylistManager: ObservableObject {
@@ -217,5 +218,134 @@ public final class PlaylistManager: ObservableObject {
         if favorites.count != beforeFavs || recentlyPlayed.count != beforeRecent {
             save()
         }
+    }
+
+    // MARK: - M3U / M3U8 Import & Export
+
+    public func exportM3U8(playlist: Playlist, to destinationURL: URL, library: LibraryManager) throws {
+        var lines: [String] = ["#EXTM3U", "#PLAYLIST:\(playlist.name)"]
+        for trackId in playlist.trackIds {
+            guard let track = library.tracksById[trackId] else { continue }
+            let durationSec = max(0, Int(track.duration.rounded()))
+            lines.append("#EXTINF:\(durationSec),\(track.displayArtist) - \(track.displayTitle)")
+            lines.append(track.path.path)
+        }
+        let output = lines.joined(separator: "\n") + "\n"
+        try output.write(to: destinationURL, atomically: true, encoding: .utf8)
+    }
+
+    @discardableResult
+    public func importM3U(from sourceURL: URL, library: LibraryManager) -> Playlist? {
+        guard let data = try? Data(contentsOf: sourceURL) else { return nil }
+        var text: String?
+        for encoding in [String.Encoding.utf8, .isoLatin1, .windowsCP1252] {
+            if let decoded = String(data: data, encoding: encoding) {
+                text = decoded
+                break
+            }
+        }
+        guard var rawText = text else { return nil }
+        if rawText.hasPrefix("\u{FEFF}") {
+            rawText.removeFirst()
+        }
+
+        let baseDir = sourceURL.deletingLastPathComponent()
+        var parsedName = sourceURL.deletingPathExtension().lastPathComponent
+        var rawEntries: [String] = []
+
+        for line in rawText.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            if trimmed.uppercased().hasPrefix("#PLAYLIST:") {
+                let candidate = String(trimmed.dropFirst(10)).trimmingCharacters(in: .whitespacesAndNewlines)
+                if !candidate.isEmpty {
+                    parsedName = candidate
+                }
+                continue
+            }
+            if trimmed.hasPrefix("#") { continue }
+            rawEntries.append(trimmed)
+        }
+
+        // Index library paths (exact, lowercased, and filename fallback)
+        var byExactPath: [String: Track] = [:]
+        var byLowerPath: [String: Track] = [:]
+        var byFilename: [String: [Track]] = [:]
+
+        for track in library.tracks {
+            let stdPath = track.path.standardizedFileURL.path
+            if byExactPath[stdPath] == nil {
+                byExactPath[stdPath] = track
+            }
+            let lower = stdPath.lowercased()
+            if byLowerPath[lower] == nil {
+                byLowerPath[lower] = track
+            }
+            byFilename[track.path.lastPathComponent.lowercased(), default: []].append(track)
+        }
+
+        var matchedTrackIds: [String] = []
+        var seenIds = Set<String>()
+
+        for entry in rawEntries {
+            let resolvedURL: URL
+            if entry.lowercased().hasPrefix("file://"), let fileURL = URL(string: entry) {
+                resolvedURL = fileURL.standardizedFileURL
+            } else {
+                let normalized = entry.replacingOccurrences(of: "\\", with: "/")
+                if normalized.hasPrefix("/") {
+                    resolvedURL = URL(fileURLWithPath: normalized).standardizedFileURL
+                } else {
+                    resolvedURL = baseDir.appendingPathComponent(normalized).standardizedFileURL
+                }
+            }
+
+            let candidatePath = resolvedURL.path
+            let matchedTrack = byExactPath[candidatePath]
+                ?? byLowerPath[candidatePath.lowercased()]
+                ?? byFilename[resolvedURL.lastPathComponent.lowercased()]?.first
+
+            if let track = matchedTrack, seenIds.insert(track.id).inserted {
+                matchedTrackIds.append(track.id)
+            }
+        }
+
+        let created = createPlaylist(name: parsedName)
+        if !matchedTrackIds.isEmpty {
+            addTracks(to: created.id, trackIds: matchedTrackIds)
+        }
+        return playlists.first(where: { $0.id == created.id }) ?? created
+    }
+
+    @discardableResult
+    public func promptImportM3U(library: LibraryManager) -> Playlist? {
+        let panel = NSOpenPanel()
+        panel.title = "Import Playlist"
+        panel.message = "Choose an .m3u or .m3u8 playlist file to import into AudioFile"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        let m3uTypes = ["m3u", "m3u8"].compactMap { UTType(filenameExtension: $0) }
+        if !m3uTypes.isEmpty {
+            panel.allowedContentTypes = m3uTypes
+        }
+        guard panel.runModal() == .OK, let url = panel.url else { return nil }
+        return importM3U(from: url, library: library)
+    }
+
+    public func promptExportM3U(playlist: Playlist, library: LibraryManager) {
+        let panel = NSSavePanel()
+        panel.title = "Export Playlist"
+        let safeName = playlist.name
+            .replacingOccurrences(of: "/", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        panel.nameFieldStringValue = "\(safeName.isEmpty ? "Playlist" : safeName).m3u8"
+        if let m3u8Type = UTType(filenameExtension: "m3u8") {
+            panel.allowedContentTypes = [m3u8Type]
+        }
+        panel.canCreateDirectories = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        try? exportM3U8(playlist: playlist, to: url, library: library)
     }
 }

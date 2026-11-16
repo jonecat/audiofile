@@ -114,31 +114,89 @@ public struct PlayerBarView: View {
 
             Spacer(minLength: 6)
 
-            // Right Actions: Volume
+            // Right Actions: Audiophile Controls & Volume
             GlassEffectContainer(spacing: 8) {
-                HStack(spacing: 6) {
-                    Button {
-                        audio.isMuted.toggle()
-                    } label: {
-                        Image(systemName: audio.isMuted || audio.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                            .font(.system(size: 12))
+                HStack(spacing: 8) {
+                    // Signal Path, EQ & Queue Capsule
+                    HStack(spacing: 10) {
+                        Button {
+                            vm.showingSignalPathPopover.toggle()
+                        } label: {
+                            HStack(spacing: 4) {
+                                Circle()
+                                    .fill(signalPathIndicatorColor)
+                                    .frame(width: 6, height: 6)
+                                Image(systemName: "waveform.path.ecg")
+                                    .font(.system(size: 12, weight: .semibold))
+                            }
                             .foregroundStyle(Color.primary.opacity(0.85))
-                    }
-                    .buttonStyle(.plain)
-                    .help("Mute / Unmute (M)")
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Signal Path Inspection")
+                        .popover(isPresented: $vm.showingSignalPathPopover, arrowEdge: .bottom) {
+                            SignalPathPopoverView(vm: vm, audio: audio)
+                        }
 
-                    Slider(value: Binding(
-                        get: { audio.volume },
-                        set: { audio.volume = $0 }
-                    ), in: 0...1.5)
-                    .tint(Color.accentColor)
-                    .frame(width: 96)
-                    .controlSize(.mini)
-                    .help("Adjust playback volume (+ / -)")
+                        Button {
+                            vm.showingEQPopover.toggle()
+                        } label: {
+                            Image(systemName: "slider.vertical.3")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle((vm.config.eqEnabled || vm.config.crossfeedEnabled) ? Color.accentColor : Color.primary.opacity(0.85))
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("10-Band Parametric EQ & DSP")
+                        .popover(isPresented: $vm.showingEQPopover, arrowEdge: .bottom) {
+                            ParametricEQView(vm: vm, showDSPExtras: true)
+                                .padding(16)
+                                .frame(width: 470)
+                        }
+
+                        Button {
+                            vm.showingQueuePopover.toggle()
+                        } label: {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(vm.upcomingQueueItems.isEmpty ? Color.primary.opacity(0.85) : Color.accentColor)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Up Next Playback Queue")
+                        .popover(isPresented: $vm.showingQueuePopover, arrowEdge: .bottom) {
+                            QueuePopoverView(vm: vm, audio: audio)
+                        }
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .glassEffect(.clear, in: .capsule)
+
+                    // Volume Capsule
+                    HStack(spacing: 6) {
+                        Button {
+                            audio.isMuted.toggle()
+                        } label: {
+                            Image(systemName: audio.isMuted || audio.volume == 0 ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(.system(size: 12))
+                                .foregroundStyle(Color.primary.opacity(0.85))
+                        }
+                        .buttonStyle(.plain)
+                        .help("Mute / Unmute (M)")
+
+                        Slider(value: Binding(
+                            get: { audio.volume },
+                            set: { audio.volume = $0 }
+                        ), in: 0...1.5)
+                        .tint(Color.accentColor)
+                        .frame(width: 88)
+                        .controlSize(.mini)
+                        .help("Adjust playback volume (+ / -)")
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .glassEffect(.clear, in: .capsule)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .glassEffect(.clear, in: .capsule)
             }
             .fixedSize(horizontal: true, vertical: false)
         }
@@ -148,6 +206,19 @@ public struct PlayerBarView: View {
         .padding(.horizontal, 12)
         .padding(.bottom, 10)
         .padding(.top, 4)
+    }
+
+    private var signalPathIndicatorColor: Color {
+        switch vm.signalPathTier {
+        case .bitPerfect:
+            return .green
+        case .enhanced:
+            return .cyan
+        case .lossy:
+            return .orange
+        case .idle:
+            return .secondary.opacity(0.6)
+        }
     }
 }
 

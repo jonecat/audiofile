@@ -4,6 +4,7 @@ import AppKit
 public struct SettingsView: View {
     @ObservedObject var vm: PlayerViewModel
     @ObservedObject var library = LibraryManager.shared
+    @ObservedObject var audio = AudioEngine.shared
     @Environment(\.dismiss) private var dismiss
 
     public init(vm: PlayerViewModel) {
@@ -374,52 +375,239 @@ public struct SettingsView: View {
     // MARK: - Tab 2: Audio
 
     private var audioTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Audiophile Audio Engine")
-                    .font(.title3.weight(.bold))
-                Text("Native Apple CoreAudio and AVAudioEngine playback pipeline with gapless pre-buffering.")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Engine Specifications")
-                    .font(.headline)
-
-                Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
-                    GridRow {
-                        Text("Playback Backend:").foregroundColor(.secondary)
-                        Text("Apple CoreAudio & AVAudioEngine (macOS Native)")
-                    }
-                    GridRow {
-                        Text("Supported Formats:").foregroundColor(.secondary)
-                        Text("FLAC, ALAC, WAV, AIFF, APE, DSD (DSF/DFF), M4A/AAC, MP3")
-                    }
-                    GridRow {
-                        Text("Bit Depths:").foregroundColor(.secondary)
-                        Text("1-bit DSD, 16-bit, 24-bit, 32-bit Float")
-                    }
-                    GridRow {
-                        Text("Sample Rates:").foregroundColor(.secondary)
-                        Text("44.1 to 192 kHz PCM • 2.82 / 5.64 MHz DSD64/128")
-                    }
-                    GridRow {
-                        Text("Gapless Preload:").foregroundColor(.secondary)
-                        Text("Double-buffered boundary sample alignment")
-                    }
-                    GridRow {
-                        Text("Output Matching:").foregroundColor(.secondary)
-                        Text("Direct pitch match with native DAC sample rate conversion")
-                    }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Audiophile Audio Engine")
+                        .font(.title3.weight(.bold))
+                    Text("CoreAudio DAC routing, sample-rate switching, exclusive mode, ReplayGain, and 10-band Parametric EQ.")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
-                .font(.system(size: 12, design: .monospaced))
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .glassEffect(.regular, in: .rect(cornerRadius: 12))
-            }
 
-            Spacer()
+                // 1. CoreAudio Output DAC & Bit-Perfect Routing
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Text("Hardware DAC & Output Routing")
+                            .font(.headline)
+                        Spacer()
+                        Text(String(format: "Active Clock: %.1f kHz", audio.hardwareSampleRate / 1000.0))
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 10) {
+                            Text("Output Device")
+                                .font(.system(size: 13, weight: .medium))
+                                .frame(width: 110, alignment: .leading)
+
+                            Picker("Output Device", selection: Binding(
+                                get: { vm.config.selectedOutputDeviceUID ?? "" },
+                                set: { vm.selectOutputDevice(uid: $0.isEmpty ? nil : $0) }
+                            )) {
+                                Text("System Default Output").tag("")
+                                ForEach(audio.availableDevices) { dev in
+                                    Text("\(dev.name) (\(dev.formattedSampleRate))").tag(dev.id)
+                                }
+                            }
+                            .labelsHidden()
+
+                            Button {
+                                vm.refreshOutputDevices()
+                            } label: {
+                                Image(systemName: "arrow.clockwise")
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                            .help("Rescan connected CoreAudio DACs and interfaces")
+                        }
+
+                        Divider()
+
+                        Toggle(isOn: Binding(
+                            get: { vm.config.autoSampleRateSwitching },
+                            set: { vm.setAutoSampleRateSwitching($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Bit-Perfect Auto Sample-Rate Switching")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Automatically matches the DAC hardware sample rate to each track (44.1 / 48 / 88.2 / 96 / 192 kHz) to bypass macOS resampling.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+
+                        Toggle(isOn: Binding(
+                            get: { vm.config.exclusiveHogMode },
+                            set: { vm.setExclusiveHogMode($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack(spacing: 6) {
+                                    Text("Exclusive DAC (\"Hog\") Mode")
+                                        .font(.system(size: 13, weight: .medium))
+                                    if audio.isHogModeActive {
+                                        Text("LOCKED")
+                                            .font(.system(size: 9, weight: .bold))
+                                            .foregroundStyle(.purple)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(Capsule().fill(Color.purple.opacity(0.16)))
+                                    }
+                                }
+                                Text("Acquires exclusive hardware access on dedicated external USB/Thunderbolt DACs so system alerts and other apps cannot mix into playback.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
+
+                // 2. ReplayGain & Loudness Normalization
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("ReplayGain Normalization")
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Normalization Mode")
+                                .font(.system(size: 13, weight: .medium))
+                            Spacer()
+                            Picker("ReplayGain Mode", selection: Binding(
+                                get: { vm.config.replayGainMode },
+                                set: { vm.setReplayGainMode($0) }
+                            )) {
+                                ForEach(ReplayGainMode.allCases) { mode in
+                                    Text(mode.rawValue).tag(mode)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                            .labelsHidden()
+                            .frame(width: 260)
+                        }
+
+                        HStack(spacing: 12) {
+                            Text("Preamp Trim")
+                                .font(.system(size: 13, weight: .medium))
+                                .frame(width: 110, alignment: .leading)
+
+                            Slider(value: Binding(
+                                get: { Double(vm.config.replayGainPreampDb) },
+                                set: { vm.setReplayGainPreamp(Float($0)) }
+                            ), in: -6.0...6.0, step: 0.5)
+
+                            Text(String(format: "%+.1f dB", vm.config.replayGainPreampDb))
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(width: 60, alignment: .trailing)
+                        }
+                        .disabled(vm.config.replayGainMode == .off)
+
+                        Text("Applies embedded REPLAYGAIN tags with automatic peak clipping prevention using REPLAYGAIN_*_PEAK headroom.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
+
+                // 3. Headphone Crossfeed (BS2B)
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Headphone Crossfeed (BS2B Acoustic Staging)")
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 10) {
+                        Toggle(isOn: Binding(
+                            get: { vm.config.crossfeedEnabled },
+                            set: { vm.setCrossfeedEnabled($0) }
+                        )) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Enable BS2B Headphone Crossfeed")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("Blends a ~700 Hz low-pass cross-channel signal with a 260 µs interaural delay to restore speaker-like soundstage and reduce ear fatigue.")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .toggleStyle(.switch)
+
+                        HStack(spacing: 12) {
+                            Text("Feed Level")
+                                .font(.system(size: 12, weight: .medium))
+                                .frame(width: 110, alignment: .leading)
+
+                            Slider(value: Binding(
+                                get: { Double(vm.config.crossfeedLevel) },
+                                set: { vm.setCrossfeedLevel(Float($0)) }
+                            ), in: 0.05...0.75)
+                            .disabled(!vm.config.crossfeedEnabled)
+
+                            Text("\(Int((vm.config.crossfeedLevel * 100).rounded()))%")
+                                .font(.system(size: 12, design: .monospaced))
+                                .foregroundColor(.secondary)
+                                .frame(width: 48, alignment: .trailing)
+                        }
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
+
+                // 4. 10-Band Parametric EQ
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Parametric Equalizer")
+                        .font(.headline)
+
+                    ParametricEQView(vm: vm, showDSPExtras: false)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
+
+                // 5. Engine Specifications Grid
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Engine Specifications")
+                        .font(.headline)
+
+                    Grid(alignment: .leading, horizontalSpacing: 16, verticalSpacing: 10) {
+                        GridRow {
+                            Text("Playback Backend:").foregroundColor(.secondary)
+                            Text("Apple CoreAudio & AVAudioEngine (macOS Native)")
+                        }
+                        GridRow {
+                            Text("Supported Formats:").foregroundColor(.secondary)
+                            Text("FLAC, ALAC, WAV, AIFF, APE, DSD (DSF/DFF), M4A/AAC, MP3 + .CUE")
+                        }
+                        GridRow {
+                            Text("Bit Depths:").foregroundColor(.secondary)
+                            Text("1-bit DSD, 16-bit, 24-bit, 32-bit Float")
+                        }
+                        GridRow {
+                            Text("Sample Rates:").foregroundColor(.secondary)
+                            Text("44.1 to 192 kHz PCM • 2.82 / 5.64 MHz DSD64/128")
+                        }
+                        GridRow {
+                            Text("Gapless Playback:").foregroundColor(.secondary)
+                            Text("Sample-accurate .dataPlayedBack node pre-scheduling")
+                        }
+                        GridRow {
+                            Text("DSP Pipeline:").foregroundColor(.secondary)
+                            Text("10-band Parametric EQ (AutoEQ) • BS2B Crossfeed • ReplayGain")
+                        }
+                    }
+                    .font(.system(size: 12, design: .monospaced))
+                    .padding(16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .glassEffect(.regular, in: .rect(cornerRadius: 12))
+                }
+            }
+            .padding(.bottom, 12)
         }
     }
 

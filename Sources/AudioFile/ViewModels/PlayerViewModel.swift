@@ -1,6 +1,8 @@
 import Foundation
 import SwiftUI
 import Combine
+import AppKit
+import UniformTypeIdentifiers
 
 public enum NavigationSection: Hashable, Sendable {
     case artists
@@ -109,6 +111,7 @@ public final class PlayerViewModel: ObservableObject {
         didSet {
             config.repeatMode = repeatMode
             config.save()
+            preloadUpcoming()
         }
     }
 
@@ -150,6 +153,10 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var showingAbout: Bool = false
     @Published public var showingNewPlaylistDialog: Bool = false
     @Published public var isHoveringAddPlaylist: Bool = false
+    @Published public var isHoveringImportPlaylist: Bool = false
+    @Published public var showingSignalPathPopover: Bool = false
+    @Published public var showingQueuePopover: Bool = false
+    @Published public var showingEQPopover: Bool = false
     @Published public var newPlaylistName: String = ""
     @Published public var playlistPendingDeletion: Playlist?
     @Published public var selectedArtist: String?
@@ -246,6 +253,7 @@ public final class PlayerViewModel: ObservableObject {
         self.visualizer.setMode(config.visualizerMode)
         self.lyricsScale = config.lyricsScale
         self.audio.volume = config.volume
+        self.audio.applyAudioConfig(config)
         self.artistsColumnWidth = CGFloat(config.artistsColumnWidth)
         self.albumsColumnWidth = CGFloat(config.albumsColumnWidth)
 
@@ -266,9 +274,12 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     private func setupSubscriptions() {
-        // Forward audio track completion to nextTrack()
+        // Forward audio track completion and gapless transitions
         audio.onTrackCompleted = { [weak self] in
             self?.handleTrackEnded()
+        }
+        audio.onGaplessTrackAdvanced = { [weak self] advancedTrack in
+            self?.handleGaplessTrackAdvanced(to: advancedTrack)
         }
         audio.onPreviousTrackRequested = { [weak self] in
             self?.previousTrack()
@@ -601,6 +612,23 @@ public final class PlayerViewModel: ObservableObject {
         nextTrack()
     }
 
+    private func handleGaplessTrackAdvanced(to advancedTrack: Track) {
+        let nextIndex = currentQueueIndex + 1
+        if nextIndex < queue.count, queue[nextIndex].id == advancedTrack.id {
+            currentQueueIndex = nextIndex
+        } else if repeatMode == .all, queue.first?.id == advancedTrack.id {
+            currentQueueIndex = 0
+        } else if let foundIndex = queue.firstIndex(where: { $0.id == advancedTrack.id }) {
+            currentQueueIndex = foundIndex
+        }
+
+        selectedTrackId = advancedTrack.id
+        if isLibraryShuffleActive && currentQueueIndex + 1 >= queue.count {
+            appendReshuffledLibraryPass()
+        }
+        preloadUpcoming()
+    }
+
     private func appendReshuffledLibraryPass() {
         let source = library.tracks.isEmpty ? originalQueue : library.tracks
         guard !source.isEmpty else { return }
@@ -613,6 +641,10 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     private func preloadUpcoming() {
+        if repeatMode == .one, let current = audio.currentTrack {
+            audio.preloadNextTrack(current)
+            return
+        }
         if isLibraryShuffleActive && currentQueueIndex + 1 >= queue.count {
             appendReshuffledLibraryPass()
         }
@@ -622,7 +654,330 @@ public final class PlayerViewModel: ObservableObject {
             audio.preloadNextTrack(next)
         } else if repeatMode == .all, let first = queue.first {
             audio.preloadNextTrack(first)
+        } else {
+            audio.clearPreloadedNextTrack()
         }
+    }
+
+    // MARK: - Queue Management
+
+    public var upcomingQueueItems: [(index: Int, track: Track)] {
+        guard !queue.isEmpty else { return [] }
+        let startIndex = max(0, currentQueueIndex + 1)
+        guard startIndex < queue.count else { return [] }
+        return (startIndex..<queue.count).map { ($0, queue[$0]) }
+    }
+
+    public func playTrackNext(_ track: Track) {
+        playTracksNext([track])
+    }
+
+    public func playTracksNext(_ tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+        if queue.isEmpty || audio.currentTrack == nil {
+            playTrack(tracks[0], in: tracks)
+            return
+        }
+        let insertIndex = (currentQueueIndex >= 0 && currentQueueIndex < queue.count)
+            ? currentQueueIndex + 1
+            : queue.count
+        queue.insert(contentsOf: tracks, at: insertIndex)
+        if !shuffle && !isLibraryShuffleActive {
+            originalQueue = queue
+        }
+        preloadUpcoming()
+        showToast(
+            icon: "text.insert",
+            message: tracks.count == 1 ? "Playing Next: \(tracks[0].displayTitle)" : "Playing \(tracks.count) Songs Next"
+        )
+    }
+
+    public func addTrackToEndOfQueue(_ track: Track) {
+        addTracksToEndOfQueue([track])
+    }
+
+    public func addTracksToEndOfQueue(_ tracks: [Track]) {
+        guard !tracks.isEmpty else { return }
+        if queue.isEmpty || audio.currentTrack == nil {
+            playTrack(tracks[0], in: tracks)
+            return
+        }
+        queue.append(contentsOf: tracks)
+        if !shuffle && !isLibraryShuffleActive {
+            originalQueue = queue
+        }
+        preloadUpcoming()
+        showToast(
+            icon: "text.append",
+            message: tracks.count == 1 ? "Added to Queue: \(tracks[0].displayTitle)" : "Added \(tracks.count) Songs to Queue"
+        )
+    }
+
+    public func removeQueueItem(at index: Int) {
+        guard queue.indices.contains(index), index != currentQueueIndex else { return }
+        queue.remove(at: index)
+        if index < currentQueueIndex {
+            currentQueueIndex -= 1
+        }
+        if !shuffle && !isLibraryShuffleActive {
+            originalQueue = queue
+        }
+        preloadUpcoming()
+    }
+
+    public func clearUpcomingQueue() {
+        guard currentQueueIndex >= 0, currentQueueIndex + 1 < queue.count else { return }
+        queue.removeSubrange((currentQueueIndex + 1)..<queue.count)
+        if !shuffle && !isLibraryShuffleActive {
+            originalQueue = queue
+        }
+        preloadUpcoming()
+    }
+
+    public func playQueueItem(at index: Int) {
+        guard queue.indices.contains(index) else { return }
+        currentQueueIndex = index
+        let track = queue[index]
+        selectedTrackId = track.id
+        audio.play(track: track)
+        preloadUpcoming()
+    }
+
+    // MARK: - Audiophile DAC, Signal Path, Parametric EQ, Crossfeed & ReplayGain
+
+    public enum SignalPathTier {
+        case idle
+        case lossy
+        case enhanced
+        case bitPerfect
+    }
+
+    public var signalPathTier: SignalPathTier {
+        guard let track = audio.currentTrack else { return .idle }
+        guard track.isLossless else { return .lossy }
+        let trackRate = track.sampleRate ?? audio.hardwareSampleRate
+        let rateMatched = abs(trackRate - audio.hardwareSampleRate) < 1.0
+        let dspBypassed = !config.eqEnabled
+            && !config.crossfeedEnabled
+            && (config.replayGainMode == .off || abs(audio.activeReplayGainDb) < 0.05)
+        let unityVolume = !audio.isMuted && abs(audio.volume - 1.0) <= 0.005
+        return (rateMatched && dspBypassed && unityVolume) ? .bitPerfect : .enhanced
+    }
+
+    public static let eqPresetNames: [String] = [
+        "Flat",
+        "Harman Target",
+        "Bass Boost",
+        "Vocal Presence",
+        "Treble Air",
+        "Late Night"
+    ]
+
+    public func refreshOutputDevices() {
+        audio.refreshOutputDevices()
+    }
+
+    public func selectOutputDevice(uid: String?) {
+        config.selectedOutputDeviceUID = uid
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setAutoSampleRateSwitching(_ enabled: Bool) {
+        config.autoSampleRateSwitching = enabled
+        config.save()
+        audio.applyAudioConfig(config)
+        preloadUpcoming()
+    }
+
+    public func setExclusiveHogMode(_ enabled: Bool) {
+        config.exclusiveHogMode = enabled
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setReplayGainMode(_ mode: ReplayGainMode) {
+        config.replayGainMode = mode
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setReplayGainPreamp(_ db: Float) {
+        config.replayGainPreampDb = db
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setEQEnabled(_ enabled: Bool) {
+        config.eqEnabled = enabled
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setEQPreamp(_ db: Float) {
+        config.eqPreampDb = db
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func updateEQBand(at index: Int, gainDb: Float) {
+        guard config.eqBands.indices.contains(index) else { return }
+        config.eqBands[index].gainDb = gainDb
+        config.eqPresetName = "Custom"
+        if !config.eqEnabled {
+            config.eqEnabled = true
+        }
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func applyEQPreset(_ presetName: String) {
+        let gains: [Float]
+        let preamp: Float
+        switch presetName {
+        case "Harman Target":
+            gains = [3.5, 2.5, 0.5, -1.0, 0.0, 0.5, 1.5, 2.5, 1.0, -0.5]
+            preamp = -3.5
+        case "Bass Boost":
+            gains = [5.5, 4.5, 2.5, 0.5, 0.0, 0.0, 0.0, 0.5, 1.0, 1.0]
+            preamp = -5.5
+        case "Vocal Presence":
+            gains = [-1.5, -1.0, 0.0, 1.0, 2.0, 3.0, 3.5, 2.0, 0.5, 0.0]
+            preamp = -3.5
+        case "Treble Air":
+            gains = [0.0, 0.0, 0.0, 0.0, 0.0, 0.5, 1.5, 3.0, 4.0, 4.5]
+            preamp = -4.5
+        case "Late Night":
+            gains = [3.0, 2.0, 0.5, 0.0, 1.5, 2.0, 1.5, 1.0, 2.5, 2.0]
+            preamp = -3.0
+        default: // "Flat"
+            gains = Array(repeating: 0.0, count: 10)
+            preamp = 0.0
+        }
+
+        var bands = AppConfig.defaultEQBands()
+        for i in 0..<min(bands.count, gains.count) {
+            bands[i].gainDb = gains[i]
+        }
+        config.eqBands = bands
+        config.eqPreampDb = preamp
+        config.eqPresetName = presetName
+        if presetName == "Flat" {
+            // Keep current eqEnabled unless already explicitly desired
+        } else {
+            config.eqEnabled = true
+        }
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func importAutoEQFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import AutoEQ / EqualizerAPO Parametric EQ"
+        panel.message = "Select a ParametricEQ .txt profile (EqualizerAPO / AutoEQ format)"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [.plainText]
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        guard let content = (try? String(contentsOf: url, encoding: .utf8)) ?? (try? String(contentsOf: url, encoding: .isoLatin1)) else {
+            showToast(icon: "exclamationmark.triangle", message: "Could not read EQ profile")
+            return
+        }
+
+        var preamp: Float = 0.0
+        var parsedBands: [EQBandConfig] = []
+
+        for rawLine in content.components(separatedBy: .newlines) {
+            let line = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty { continue }
+
+            if line.lowercased().hasPrefix("preamp:") {
+                let tokens = line.dropFirst(7).split(whereSeparator: { $0.isWhitespace })
+                if let firstNum = tokens.first, let val = Float(firstNum) {
+                    preamp = max(-18.0, min(12.0, val))
+                }
+                continue
+            }
+
+            if line.lowercased().hasPrefix("filter ") {
+                let parts = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+                guard parts.contains(where: { $0.uppercased() == "ON" }) else { continue }
+
+                var filterType: EQFilterType = .parametric
+                if parts.contains(where: { $0.uppercased() == "LS" || $0.uppercased() == "LSC" }) {
+                    filterType = .lowShelf
+                } else if parts.contains(where: { $0.uppercased() == "HS" || $0.uppercased() == "HSC" }) {
+                    filterType = .highShelf
+                } else if !parts.contains(where: { $0.uppercased() == "PK" || $0.uppercased() == "PEQ" }) {
+                    continue
+                }
+
+                var freq: Double?
+                var gain: Float?
+                var qVal: Double = 1.41
+
+                for idx in parts.indices {
+                    let token = parts[idx].uppercased()
+                    if token == "FC", idx + 1 < parts.count, let v = Double(parts[idx + 1]) {
+                        freq = v
+                    } else if token == "GAIN", idx + 1 < parts.count, let v = Float(parts[idx + 1]) {
+                        gain = max(-18.0, min(18.0, v))
+                    } else if token == "Q", idx + 1 < parts.count, let v = Double(parts[idx + 1]) {
+                        qVal = max(0.1, min(10.0, v))
+                    }
+                }
+
+                if let f = freq, let g = gain, parsedBands.count < 10 {
+                    parsedBands.append(
+                        EQBandConfig(
+                            id: parsedBands.count,
+                            frequency: f,
+                            gainDb: g,
+                            qFactor: qVal,
+                            filterType: filterType
+                        )
+                    )
+                }
+            }
+        }
+
+        guard !parsedBands.isEmpty else {
+            showToast(icon: "exclamationmark.triangle", message: "No compatible ParametricEQ filters found")
+            return
+        }
+
+        // Pad up to 10 bands so UI sliders stay aligned when profiles have fewer than 10 filters
+        let defaults = AppConfig.defaultEQBands()
+        while parsedBands.count < 10 {
+            let nextIdx = parsedBands.count
+            var padBand = defaults[nextIdx]
+            padBand.id = nextIdx
+            padBand.gainDb = 0.0
+            parsedBands.append(padBand)
+        }
+
+        let name = url.deletingPathExtension().lastPathComponent
+        config.eqBands = parsedBands
+        config.eqPreampDb = preamp
+        config.eqPresetName = name
+        config.eqEnabled = true
+        config.save()
+        audio.applyAudioConfig(config)
+        showToast(icon: "slider.vertical.3", message: "Imported EQ: \(name)")
+    }
+
+    public func setCrossfeedEnabled(_ enabled: Bool) {
+        config.crossfeedEnabled = enabled
+        config.save()
+        audio.applyAudioConfig(config)
+    }
+
+    public func setCrossfeedLevel(_ level: Float) {
+        config.crossfeedLevel = max(0.0, min(1.0, level))
+        config.save()
+        audio.applyAudioConfig(config)
     }
 
     private func updateShuffleQueue() {

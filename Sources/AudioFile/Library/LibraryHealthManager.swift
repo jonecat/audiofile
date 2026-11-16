@@ -1,14 +1,16 @@
 import Foundation
 import AppKit
 import Combine
+import Accelerate
+import AVFoundation
 
 public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
     case missingInfo = "Missing Info"
     case missingArtwork = "Missing Artwork"
     case splitAlbums = "Split Albums"
     case missingLyrics = "Missing Lyrics"
-    case duplicates = "Duplicates"
     case dynamicRange = "Dynamic Range"
+    case fakeLossless = "Lossless Audit"
 
     public var id: String { rawValue }
 
@@ -22,10 +24,10 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
             return "inconsistent album or artist tags"
         case .missingLyrics:
             return "songs without synced .lrc lyrics"
-        case .duplicates:
-            return "multiple copies of the same song"
         case .dynamicRange:
             return "songs without DR score"
+        case .fakeLossless:
+            return "FFT audit for upsampled/lossy transcodes"
         }
     }
 
@@ -39,18 +41,18 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
             return "rectangle.split.2x1"
         case .missingLyrics:
             return "quote.bubble"
-        case .duplicates:
-            return "doc.on.doc"
         case .dynamicRange:
             return "waveform.badge.magnifyingglass"
+        case .fakeLossless:
+            return "waveform.path.ecg.rectangle"
         }
     }
 
     public var supportsFindFixes: Bool {
         switch self {
-        case .missingInfo, .missingArtwork, .missingLyrics, .dynamicRange:
+        case .missingInfo, .missingArtwork, .missingLyrics, .dynamicRange, .fakeLossless:
             return true
-        case .splitAlbums, .duplicates:
+        case .splitAlbums:
             return false
         }
     }
@@ -59,10 +61,23 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .missingInfo, .splitAlbums:
             return true
-        case .missingArtwork, .missingLyrics, .duplicates, .dynamicRange:
+        case .missingArtwork, .missingLyrics, .dynamicRange, .fakeLossless:
             return false
         }
     }
+}
+
+public enum LosslessAuditVerdict: String, Codable, Sendable {
+    case verifiedLossless
+    case suspectMP3_128
+    case suspectMP3_320
+}
+
+public struct LosslessAuditResult: Codable, Equatable, Sendable {
+    public let verdict: LosslessAuditVerdict
+    public let summary: String
+    public let cutoffHz: Int?
+    public let fileSize: UInt64?
 }
 
 public enum HealthFixMode: String, CaseIterable, Identifiable, Sendable {
@@ -155,13 +170,13 @@ public final class LibraryHealthManager: ObservableObject {
 
     public private(set) var overrides: [String: TrackMetadataOverride] = [:]
     private var ignoredIssueIds: Set<String> = []
+    public private(set) var losslessAuditResults: [String: LosslessAuditResult] = [:]
     private var cancellables = Set<AnyCancellable>()
     private var analyzeTask: Task<Void, Never>?
     private var analyzeGeneration: UInt64 = 0
 
     private nonisolated static let messyTitlePattern1Regex = try! NSRegularExpression(pattern: #"^(\d{1,3})\s*[-–.]\s*([^-–]+?)\s*[-–]\s*(.+)$"#)
     private nonisolated static let messyTitlePattern2Regex = try! NSRegularExpression(pattern: #"^(\d{1,3})(?:\s*[-–.]\s*|\s+)(.+)$"#)
-    private nonisolated static let cleanTitlePrefixRegex = try! NSRegularExpression(pattern: #"^\d{1,3}[\s.\-_]+"#)
 
     private nonisolated static var overridesURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -177,10 +192,18 @@ public final class LibraryHealthManager: ObservableObject {
         return appDir.appendingPathComponent("ignored_health_issues.json")
     }
 
+    private nonisolated static var losslessAuditURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let appDir = appSupport.appendingPathComponent("AudioFile", isDirectory: true)
+        try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
+        return appDir.appendingPathComponent("lossless_audit_v2.json")
+    }
+
     public init() {
         self.includeDynamicRangeAnalysis = UserDefaults.standard.bool(forKey: Self.includeDRAnalysisKey)
         loadOverrides()
         loadIgnoredIssues()
+        loadLosslessAuditResults()
 
         LibraryManager.shared.libraryStructureDidChange
             .receive(on: RunLoop.main)
@@ -229,12 +252,14 @@ public final class LibraryHealthManager: ObservableObject {
     public func clearAllOverridesAndIgnored() {
         overrides.removeAll()
         ignoredIssueIds.removeAll()
+        losslessAuditResults.removeAll()
         try? FileManager.default.removeItem(at: Self.overridesURL)
         try? FileManager.default.removeItem(at: Self.ignoredURL)
+        try? FileManager.default.removeItem(at: Self.losslessAuditURL)
     }
 
     public var hasOverridesOrIgnored: Bool {
-        !overrides.isEmpty || !ignoredIssueIds.isEmpty
+        !overrides.isEmpty || !ignoredIssueIds.isEmpty || !losslessAuditResults.isEmpty
     }
 
     public func loadOverrides() {
@@ -262,6 +287,23 @@ public final class LibraryHealthManager: ObservableObject {
         }
     }
 
+    private func loadLosslessAuditResults() {
+        let legacyURL = Self.losslessAuditURL.deletingLastPathComponent().appendingPathComponent("lossless_audit_db.json")
+        if FileManager.default.fileExists(atPath: legacyURL.path) {
+            try? FileManager.default.removeItem(at: legacyURL)
+        }
+        if let data = try? Data(contentsOf: Self.losslessAuditURL),
+           let decoded = try? JSONDecoder().decode([String: LosslessAuditResult].self, from: data) {
+            self.losslessAuditResults = decoded
+        }
+    }
+
+    private func saveLosslessAuditResults() {
+        if let data = try? JSONEncoder().encode(losslessAuditResults) {
+            try? data.write(to: Self.losslessAuditURL, options: .atomic)
+        }
+    }
+
     public func applySavedOverride(to track: inout Track) {
         Self.applyOverride(from: overrides, to: &track)
     }
@@ -272,10 +314,10 @@ public final class LibraryHealthManager: ObservableObject {
         LibraryManager.shared.tracks.count
     }
 
-    /// Number of songs with core health issues (missing info, missing artwork, split albums, or duplicates)
+    /// Number of songs with core health issues (missing info, missing artwork, or split albums)
     public var songsNeedingAttentionCount: Int {
         var affectedTrackIds = Set<String>()
-        for issue in issues where issue.category != .missingLyrics && issue.category != .dynamicRange {
+        for issue in issues where issue.category != .missingLyrics && issue.category != .dynamicRange && issue.category != .fakeLossless {
             for id in issue.trackIds {
                 affectedTrackIds.insert(id)
             }
@@ -297,7 +339,9 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public var totalIssuesBadgeCount: Int {
-        issues.filter { $0.category != .missingLyrics && $0.category != .dynamicRange }.count
+        issues.filter { issue in
+            issue.category != .missingLyrics && issue.category != .dynamicRange && issue.category != .fakeLossless
+        }.count
     }
 
     public func issues(for category: HealthIssueCategory) -> [HealthIssue] {
@@ -305,7 +349,8 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public var readyFixesInSelectedCategory: [HealthIssue] {
-        issues(for: selectedCategory).filter { $0.fixFound }
+        if selectedCategory == .fakeLossless { return [] }
+        return issues(for: selectedCategory).filter { $0.fixFound }
     }
 
     // MARK: - Library Health Analysis
@@ -354,13 +399,15 @@ public final class LibraryHealthManager: ObservableObject {
         isAnalyzing = true
         let ignoredSnapshot = ignoredIssueIds
         let existingByIdSnapshot = Dictionary(uniqueKeysWithValues: issues.map { ($0.id, $0) })
+        let auditSnapshot = losslessAuditResults
 
         analyzeTask = Task { @MainActor [weak self] in
             let detected = await Task.detached(priority: .utility) { () -> [HealthIssue] in
                 Self.computeHealthIssues(
                     tracks: tracks,
                     ignoredIssueIds: ignoredSnapshot,
-                    existingById: existingByIdSnapshot
+                    existingById: existingByIdSnapshot,
+                    losslessAuditResults: auditSnapshot
                 )
             }.value
 
@@ -384,7 +431,8 @@ public final class LibraryHealthManager: ObservableObject {
     private nonisolated static func computeHealthIssues(
         tracks: [Track],
         ignoredIssueIds: Set<String>,
-        existingById: [String: HealthIssue]
+        existingById: [String: HealthIssue],
+        losslessAuditResults: [String: LosslessAuditResult]
     ) -> [HealthIssue] {
         var detected: [HealthIssue] = []
 
@@ -490,40 +538,6 @@ public final class LibraryHealthManager: ObservableObject {
             }
         }
 
-        // 4. Duplicates (same normalized artist + title + album, duration within 3s)
-        var sigGroups: [String: [Track]] = [:]
-        for track in tracks {
-            let normTitle = Self.cleanTitleForComparison(track.displayTitle)
-            let normArtist = track.displayArtist.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            let normAlbum = track.displayAlbum.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-            let key = "\(normArtist)|\(normAlbum)|\(normTitle)"
-            sigGroups[key, default: []].append(track)
-        }
-        for (key, group) in sigGroups where group.count > 1 {
-            if Task.isCancelled { return [] }
-            // Sort by quality descending so group[0] is the best keeper
-            let ranked = group.sorted { Self.qualityScore($0) > Self.qualityScore($1) }
-            let keeper = ranked[0]
-            for dup in ranked.dropFirst() {
-                if abs(keeper.duration - dup.duration) <= 4.0 || keeper.duration == 0 || dup.duration == 0 {
-                    let issueId = "dup_\(key)_\(dup.id)"
-                    guard !ignoredIssueIds.contains(issueId) else { continue }
-
-                    detected.append(HealthIssue(
-                        id: issueId,
-                        category: .duplicates,
-                        trackIds: [dup.id],
-                        primaryTrack: keeper,
-                        duplicateTrack: dup,
-                        issueDescription: "Duplicate song detected",
-                        currentSummary: "Duplicate: \(dup.format) (\(dup.qualityDescription)) • \(dup.path.lastPathComponent)",
-                        proposedSummary: "Keep \(keeper.format) (\(keeper.qualityDescription)) & move duplicate to Trash",
-                        fixFound: true
-                    ))
-                }
-            }
-        }
-
         // 5. Missing Synced Lyrics (batch-read cache directory contents once)
         let lyricsCacheDir = LRCLIBClient.cacheDirectory
         let cachedLyricsFiles = Set((try? FileManager.default.contentsOfDirectory(atPath: lyricsCacheDir.path)) ?? [])
@@ -571,6 +585,50 @@ public final class LibraryHealthManager: ObservableObject {
                         fixFound: false
                     ))
                 }
+            }
+        }
+
+        // 7. Fake Lossless (Spectral Transcode Audit for PCM lossless files >= 44.1 kHz)
+        let dsdExtensions: Set<String> = ["dsf", "dff", "dsd"]
+        for track in tracks {
+            if Task.isCancelled { return [] }
+            guard track.isLossless,
+                  (track.sampleRate ?? 44_100) >= 44_100,
+                  !dsdExtensions.contains(track.path.pathExtension.lowercased()) else {
+                continue
+            }
+
+            let issueId = "audit_\(track.id)"
+            guard !ignoredIssueIds.contains(issueId) else { continue }
+            let cacheKey = track.path.standardizedFileURL.path
+
+            if let cached = losslessAuditResults[cacheKey], cached.fileSize == track.fileSize {
+                if cached.verdict == .suspectMP3_128 || cached.verdict == .suspectMP3_320 {
+                    detected.append(HealthIssue(
+                        id: issueId,
+                        category: .fakeLossless,
+                        trackIds: [track.id],
+                        primaryTrack: track,
+                        duplicateTrack: nil,
+                        issueDescription: "Suspect Lossy Transcode",
+                        currentSummary: "\(track.format) (\(track.qualityDescription)) • \(track.path.lastPathComponent)",
+                        proposedSummary: "Spectral shelf near \(cached.cutoffHz ?? 16000) Hz — likely transcoded from lossy audio",
+                        fixFound: true,
+                        statusNote: cached.summary
+                    ))
+                }
+            } else {
+                detected.append(HealthIssue(
+                    id: issueId,
+                    category: .fakeLossless,
+                    trackIds: [track.id],
+                    primaryTrack: track,
+                    duplicateTrack: nil,
+                    issueDescription: "Lossless not yet audited",
+                    currentSummary: "\(track.format) (\(track.qualityDescription)) • \(track.displayArtist) - \(track.displayTitle)",
+                    proposedSummary: "Inspect high-frequency spectrum via 16k FFT for brickwall cutoffs",
+                    fixFound: false
+                ))
             }
         }
 
@@ -721,6 +779,16 @@ public final class LibraryHealthManager: ObservableObject {
             guard !drIssues.isEmpty else { return }
             activeFindTask = Task { @MainActor in
                 await runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
+                activeFindTask = nil
+            }
+            return
+        }
+
+        if category == .fakeLossless {
+            let auditIssues = issues(for: .fakeLossless).filter { !$0.fixFound }
+            guard !auditIssues.isEmpty else { return }
+            activeFindTask = Task { @MainActor in
+                await runLosslessAuditBatch(issuesToProcess: auditIssues)
                 activeFindTask = nil
             }
             return
@@ -906,6 +974,251 @@ public final class LibraryHealthManager: ObservableObject {
         }
     }
 
+    // MARK: - Lossless Spectral Audit (16k FFT Transcode Detection)
+
+    public func runLosslessAuditBatch(issuesToProcess: [HealthIssue]) async {
+        guard !isFindingFixes else { return }
+        isFindingFixes = true
+
+        // Deduplicate by backing audio file path so CUE image tracks share one FFT pass
+        var uniqueByPath: [String: HealthIssue] = [:]
+        var orderedKeys: [String] = []
+        for issue in issuesToProcess where !issue.fixFound {
+            let key = issue.primaryTrack.path.standardizedFileURL.path
+            if uniqueByPath[key] == nil {
+                uniqueByPath[key] = issue
+                orderedKeys.append(key)
+            }
+        }
+
+        let targetIssues = orderedKeys.compactMap { uniqueByPath[$0] }
+        let total = targetIssues.count
+        guard total > 0 else {
+            isFindingFixes = false
+            return
+        }
+
+        var completed = 0
+        let concurrency = max(1, min(4, ProcessInfo.processInfo.activeProcessorCount))
+
+        await withTaskGroup(of: (String, LosslessAuditResult?).self) { group in
+            var iterator = targetIssues.makeIterator()
+
+            for _ in 0..<concurrency {
+                if let next = iterator.next() {
+                    let track = next.primaryTrack
+                    let key = track.path.standardizedFileURL.path
+                    group.addTask {
+                        let result = await Task.detached(priority: .utility) {
+                            Self.performLosslessFFTAudit(for: track)
+                        }.value
+                        return (key, result)
+                    }
+                }
+            }
+
+            while let (key, result) = await group.next() {
+                if Task.isCancelled { break }
+                completed += 1
+                if let res = result {
+                    self.losslessAuditResults[key] = res
+                    if completed % 15 == 0 {
+                        self.saveLosslessAuditResults()
+                    }
+                }
+                if let track = uniqueByPath[key]?.primaryTrack {
+                    self.progressText = "Auditing Lossless (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
+                }
+
+                if let next = iterator.next() {
+                    let track = next.primaryTrack
+                    let nextKey = track.path.standardizedFileURL.path
+                    group.addTask {
+                        let res = await Task.detached(priority: .utility) {
+                            Self.performLosslessFFTAudit(for: track)
+                        }.value
+                        return (nextKey, res)
+                    }
+                }
+            }
+        }
+
+        saveLosslessAuditResults()
+        progressText = ""
+        isFindingFixes = false
+        analyzeLibrary()
+    }
+
+    public func analyzeSingleLosslessAudit(for issue: HealthIssue) {
+        guard !isFindingFixes else { return }
+        Task { @MainActor in
+            if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
+                issues[idx].isSearchingFix = true
+                let track = issue.primaryTrack
+                let result = await Task.detached(priority: .utility) {
+                    Self.performLosslessFFTAudit(for: track)
+                }.value
+                if let res = result {
+                    let key = track.path.standardizedFileURL.path
+                    losslessAuditResults[key] = res
+                    saveLosslessAuditResults()
+                }
+                issues[idx].isSearchingFix = false
+                analyzeLibrary()
+            }
+        }
+    }
+
+    private nonisolated static func performLosslessFFTAudit(for track: Track) -> LosslessAuditResult? {
+        guard let audioFile = try? OpenSourceDecoders.openAudioFile(for: track.path) else {
+            return nil
+        }
+
+        let format = audioFile.processingFormat
+        let sampleRate = format.sampleRate
+        guard sampleRate >= 44_100 else {
+            return LosslessAuditResult(verdict: .verifiedLossless, summary: "Below 44.1 kHz", cutoffHz: nil, fileSize: track.fileSize)
+        }
+
+        let fftSize = 16_384
+        let log2n = vDSP_Length(14)
+        let halfSize = fftSize / 2
+
+        let totalFrames = audioFile.length
+        let startFrame: AVAudioFramePosition
+        let endFrame: AVAudioFramePosition
+        if let startSec = track.startTimeOffset, let endSec = track.endTimeOffset {
+            startFrame = max(0, min(AVAudioFramePosition(startSec * sampleRate), totalFrames))
+            endFrame = max(startFrame, min(AVAudioFramePosition(endSec * sampleRate), totalFrames))
+        } else {
+            startFrame = 0
+            endFrame = totalFrames
+        }
+
+        let sliceFrames = endFrame - startFrame
+        guard sliceFrames >= AVAudioFramePosition(fftSize) else {
+            return LosslessAuditResult(verdict: .verifiedLossless, summary: "Too short for FFT audit", cutoffHz: nil, fileSize: track.fileSize)
+        }
+
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(fftSize)),
+              let fftSetup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
+            return nil
+        }
+        defer { vDSP_destroy_fftsetup(fftSetup) }
+
+        var window = [Float](repeating: 0, count: fftSize)
+        vDSP_hann_window(&window, vDSP_Length(fftSize), Int32(vDSP_HANN_NORM))
+
+        var mono = [Float](repeating: 0, count: fftSize)
+        var windowed = [Float](repeating: 0, count: fftSize)
+        var realPart = [Float](repeating: 0, count: halfSize)
+        var imagPart = [Float](repeating: 0, count: halfSize)
+        var magSq = [Float](repeating: 0, count: halfSize)
+
+        let fractions = [0.22, 0.42, 0.62, 0.78]
+        let availableFrames = sliceFrames - AVAudioFramePosition(fftSize)
+        let normFactor = 4.0 / Float(fftSize * fftSize)
+
+        var bestMidHiDb = -160.0
+        var bestPre16Db = -160.0
+        var bestPost16Db = -160.0
+        var validWindows = 0
+
+        let hzPerBin = sampleRate / Double(fftSize)
+        let minBinMidHi = max(1, Int(4_000.0 / hzPerBin))
+        let maxBinMidHi = min(halfSize - 1, Int(14_000.0 / hzPerBin))
+        let minBinPre16 = max(1, Int(12_500.0 / hzPerBin))
+        let maxBinPre16 = min(halfSize - 1, Int(15_300.0 / hzPerBin))
+        let minBinPost16 = max(1, Int(16_600.0 / hzPerBin))
+        let maxBinPost16 = min(halfSize - 1, Int(19_400.0 / hzPerBin))
+
+        for frac in fractions {
+            let pos = startFrame + AVAudioFramePosition(Double(availableFrames) * frac)
+            audioFile.framePosition = pos
+            buffer.frameLength = 0
+            do {
+                try audioFile.read(into: buffer, frameCount: AVAudioFrameCount(fftSize))
+            } catch {
+                continue
+            }
+
+            let count = Int(buffer.frameLength)
+            guard count == fftSize, let chData = buffer.floatChannelData else { continue }
+
+            if format.channelCount >= 2 {
+                let left = chData[0]
+                let right = chData[1]
+                var half: Float = 0.5
+                vDSP_vasm(left, 1, right, 1, &half, &mono, 1, vDSP_Length(fftSize))
+            } else {
+                let ch0 = chData[0]
+                for i in 0..<fftSize { mono[i] = ch0[i] }
+            }
+
+            var rms: Float = 0
+            vDSP_rmsqv(mono, 1, &rms, vDSP_Length(fftSize))
+            if rms < 0.002 { continue }
+            validWindows += 1
+
+            vDSP_vmul(mono, 1, window, 1, &windowed, 1, vDSP_Length(fftSize))
+
+            realPart.withUnsafeMutableBufferPointer { rBuf in
+                imagPart.withUnsafeMutableBufferPointer { iBuf in
+                    var split = DSPSplitComplex(realp: rBuf.baseAddress!, imagp: iBuf.baseAddress!)
+                    windowed.withUnsafeBytes { rawBytes in
+                        let complexPtr = rawBytes.bindMemory(to: DSPComplex.self).baseAddress!
+                        vDSP_ctoz(complexPtr, 2, &split, 1, vDSP_Length(halfSize))
+                    }
+                    vDSP_fft_zrip(fftSetup, &split, 1, log2n, FFTDirection(FFT_FORWARD))
+                    vDSP_zvmags(&split, 1, &magSq, 1, vDSP_Length(halfSize))
+                }
+            }
+
+            func bandMeanDb(_ lowBin: Int, _ highBin: Int) -> Double {
+                guard highBin > lowBin else { return -160.0 }
+                var sumPower = 0.0
+                for b in lowBin...highBin {
+                    sumPower += Double(magSq[b]) * Double(normFactor)
+                }
+                let meanPower = max(sumPower / Double(highBin - lowBin + 1), 1e-16)
+                return 10.0 * log10(meanPower)
+            }
+
+            let midHi = bandMeanDb(minBinMidHi, maxBinMidHi)
+            let pre16 = bandMeanDb(minBinPre16, maxBinPre16)
+            let post16 = bandMeanDb(minBinPost16, maxBinPost16)
+
+            bestMidHiDb = max(bestMidHiDb, midHi)
+            bestPre16Db = max(bestPre16Db, pre16)
+            bestPost16Db = max(bestPost16Db, post16)
+        }
+
+        guard validWindows > 0 else {
+            return LosslessAuditResult(verdict: .verifiedLossless, summary: "Verified (low level track)", cutoffHz: nil, fileSize: track.fileSize)
+        }
+
+        // Only flag steep in-band ~16 kHz brickwall cutoffs where upper-mid/treble content right below 15.3 kHz
+        // is genuinely strong and abruptly drops into deep silence, avoiding false positives on CD masters.
+        let dropAt16 = bestPre16Db - bestPost16Db
+        let slopeTo15 = bestMidHiDb - bestPre16Db
+
+        if bestPre16Db > -72.0 && slopeTo15 < 14.0 && dropAt16 > 38.0 && bestPost16Db < -108.0 {
+            return LosslessAuditResult(
+                verdict: .suspectMP3_128,
+                summary: "Suspect ~16 kHz brickwall (-\(Int(dropAt16.rounded())) dB)",
+                cutoffHz: 16_000,
+                fileSize: track.fileSize
+            )
+        }
+
+        return LosslessAuditResult(
+            verdict: .verifiedLossless,
+            summary: "Full-spectrum lossless verified",
+            cutoffHz: nil,
+            fileSize: track.fileSize
+        )
+    }
+
     // MARK: - Approve & Apply Fixes
 
     public func approveIssue(_ issue: HealthIssue) {
@@ -948,7 +1261,8 @@ public final class LibraryHealthManager: ObservableObject {
                 overrides[trackId] = merged
 
                 if fixMode == .writeToAudioFiles,
-                   let track = LibraryManager.shared.tracks.first(where: { $0.id == trackId }) {
+                   let track = LibraryManager.shared.tracks.first(where: { $0.id == trackId }),
+                   !track.isCueTrack {
                     await Self.writeTagsToAudioFile(track: track, override: merged)
                 }
             }
@@ -979,18 +1293,11 @@ public final class LibraryHealthManager: ObservableObject {
             ignoredIssueIds.insert(issue.id)
             saveIgnoredIssues()
 
-        case .duplicates:
-            guard let dup = issue.duplicateTrack else { return }
-            do {
-                try FileManager.default.trashItem(at: dup.path, resultingItemURL: nil)
-                LibraryManager.shared.removeTrack(id: dup.id)
-            } catch {
-                ignoredIssueIds.insert(issue.id)
-                saveIgnoredIssues()
-            }
-
         case .dynamicRange:
             break
+
+        case .fakeLossless:
+            NSWorkspace.shared.activateFileViewerSelecting([issue.primaryTrack.path])
         }
     }
 
@@ -1227,20 +1534,5 @@ public final class LibraryHealthManager: ObservableObject {
             counts[v, default: 0] += 1
         }
         return counts.max(by: { $0.value < $1.value })?.key
-    }
-
-    private nonisolated static func cleanTitleForComparison(_ title: String) -> String {
-        var s = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        s = cleanTitlePrefixRegex.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
-        return s.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    private nonisolated static func qualityScore(_ track: Track) -> Int {
-        var score = 0
-        if track.isLossless { score += 10_000 }
-        score += (track.bitDepth ?? 16) * 100
-        score += Int((track.sampleRate ?? 44_100) / 1000.0)
-        score += (track.bitrate ?? 0)
-        return score
     }
 }

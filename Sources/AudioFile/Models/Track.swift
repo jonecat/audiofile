@@ -43,6 +43,15 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var modifiedDate: Date?
     public var dynamicRange: Int?
     public var playCount: Int?
+    public var startTimeOffset: TimeInterval?
+    public var endTimeOffset: TimeInterval?
+    public var replayGainTrackDb: Double?
+    public var replayGainAlbumDb: Double?
+    public var replayGainPeak: Double?
+
+    public var isCueTrack: Bool {
+        startTimeOffset != nil
+    }
 
     // Precomputed display, formatting, and sort keys (not persisted)
     public private(set) var displayTitle: String = ""
@@ -62,6 +71,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         case id, path, title, artist, album, albumArtist, genre, year, releaseDate
         case trackNumber, discNumber, duration, format, sampleRate, bitDepth, bitrate
         case hasCoverArt, fileSize, modifiedDate, dynamicRange, playCount
+        case startTimeOffset, endTimeOffset, replayGainTrackDb, replayGainAlbumDb, replayGainPeak
     }
 
     public init(
@@ -85,7 +95,12 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         fileSize: UInt64? = nil,
         modifiedDate: Date? = nil,
         dynamicRange: Int? = nil,
-        playCount: Int? = nil
+        playCount: Int? = nil,
+        startTimeOffset: TimeInterval? = nil,
+        endTimeOffset: TimeInterval? = nil,
+        replayGainTrackDb: Double? = nil,
+        replayGainAlbumDb: Double? = nil,
+        replayGainPeak: Double? = nil
     ) {
         self.path = path
         self.id = id ?? Track.generateId(for: path)
@@ -108,6 +123,11 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.modifiedDate = modifiedDate
         self.dynamicRange = dynamicRange
         self.playCount = playCount
+        self.startTimeOffset = startTimeOffset
+        self.endTimeOffset = endTimeOffset
+        self.replayGainTrackDb = replayGainTrackDb
+        self.replayGainAlbumDb = replayGainAlbumDb
+        self.replayGainPeak = replayGainPeak
         rebuildCachedProperties()
     }
 
@@ -134,6 +154,11 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.modifiedDate = try container.decodeIfPresent(Date.self, forKey: .modifiedDate)
         self.dynamicRange = try container.decodeIfPresent(Int.self, forKey: .dynamicRange)
         self.playCount = try container.decodeIfPresent(Int.self, forKey: .playCount)
+        self.startTimeOffset = try container.decodeIfPresent(TimeInterval.self, forKey: .startTimeOffset)
+        self.endTimeOffset = try container.decodeIfPresent(TimeInterval.self, forKey: .endTimeOffset)
+        self.replayGainTrackDb = try container.decodeIfPresent(Double.self, forKey: .replayGainTrackDb)
+        self.replayGainAlbumDb = try container.decodeIfPresent(Double.self, forKey: .replayGainAlbumDb)
+        self.replayGainPeak = try container.decodeIfPresent(Double.self, forKey: .replayGainPeak)
         rebuildCachedProperties()
     }
 
@@ -160,6 +185,11 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         try container.encodeIfPresent(modifiedDate, forKey: .modifiedDate)
         try container.encodeIfPresent(dynamicRange, forKey: .dynamicRange)
         try container.encodeIfPresent(playCount, forKey: .playCount)
+        try container.encodeIfPresent(startTimeOffset, forKey: .startTimeOffset)
+        try container.encodeIfPresent(endTimeOffset, forKey: .endTimeOffset)
+        try container.encodeIfPresent(replayGainTrackDb, forKey: .replayGainTrackDb)
+        try container.encodeIfPresent(replayGainAlbumDb, forKey: .replayGainAlbumDb)
+        try container.encodeIfPresent(replayGainPeak, forKey: .replayGainPeak)
     }
 
     public static func == (lhs: Track, rhs: Track) -> Bool {
@@ -183,7 +213,12 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         lhs.bitrate == rhs.bitrate &&
         lhs.releaseDate == rhs.releaseDate &&
         lhs.fileSize == rhs.fileSize &&
-        lhs.modifiedDate == rhs.modifiedDate
+        lhs.modifiedDate == rhs.modifiedDate &&
+        lhs.startTimeOffset == rhs.startTimeOffset &&
+        lhs.endTimeOffset == rhs.endTimeOffset &&
+        lhs.replayGainTrackDb == rhs.replayGainTrackDb &&
+        lhs.replayGainAlbumDb == rhs.replayGainAlbumDb &&
+        lhs.replayGainPeak == rhs.replayGainPeak
     }
 
     public func hash(into hasher: inout Hasher) {

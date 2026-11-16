@@ -108,12 +108,11 @@ public struct TrackMenuItems: View {
         }
 
         Button("Play Next") {
-            if let cur = vm.audio.currentTrack,
-               let idx = vm.queue.firstIndex(where: { $0.id == cur.id }) {
-                vm.queue.insert(track, at: idx + 1)
-            } else {
-                vm.queue.append(track)
-            }
+            vm.playTrackNext(track)
+        }
+
+        Button("Add to Queue") {
+            vm.addTrackToEndOfQueue(track)
         }
 
         Divider()
@@ -175,13 +174,11 @@ public struct TrackMenuItems: View {
         }
 
         Button("Play Next (\(count) Songs)") {
-            let resolved = resolveTracks()
-            if let cur = vm.audio.currentTrack,
-               let idx = vm.queue.firstIndex(where: { $0.id == cur.id }) {
-                vm.queue.insert(contentsOf: resolved, at: idx + 1)
-            } else {
-                vm.queue.append(contentsOf: resolved)
-            }
+            vm.playTracksNext(resolveTracks())
+        }
+
+        Button("Add to Queue (\(count) Songs)") {
+            vm.addTracksToEndOfQueue(resolveTracks())
         }
 
         Divider()

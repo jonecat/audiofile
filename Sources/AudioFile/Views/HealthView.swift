@@ -196,6 +196,7 @@ public struct HealthView: View {
 
                 // Per-section "Find Fixes" / "Stop" button
                 if health.selectedCategory.supportsFindFixes && !currentIssues.isEmpty {
+                    let hasUnauditedLossless = health.selectedCategory != .fakeLossless || currentIssues.contains(where: { !$0.fixFound })
                     if health.isFindingFixes {
                         Button {
                             health.stopFindingFixes()
@@ -203,7 +204,10 @@ public struct HealthView: View {
                             HStack(spacing: 6) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text(health.selectedCategory == .dynamicRange ? "Stop DR Analysis" : "Stop Finding Fixes")
+                                Text(
+                                    health.selectedCategory == .dynamicRange ? "Stop DR Analysis" :
+                                    (health.selectedCategory == .fakeLossless ? "Stop Lossless Audit" : "Stop Finding Fixes")
+                                )
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
@@ -212,23 +216,31 @@ public struct HealthView: View {
                         .buttonStyle(.glass)
                         .controlSize(.small)
                         .help("Stop searching for fixes")
-                    } else {
+                    } else if hasUnauditedLossless {
+                        let unauditedLosslessCount = currentIssues.filter { !$0.fixFound }.count
                         Button {
                             health.findFixes(for: health.selectedCategory)
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: health.selectedCategory == .dynamicRange ? "waveform.badge.magnifyingglass" : "wand.and.stars")
-                                Text(health.selectedCategory == .dynamicRange
-                                     ? "Analyze All Missing DR (\(currentIssues.count))"
-                                     : "Find \(health.selectedCategory.rawValue) Fixes")
-                                    .font(.system(size: 12, weight: .semibold))
+                                Image(systemName: health.selectedCategory.systemImage)
+                                Text(
+                                    health.selectedCategory == .dynamicRange
+                                        ? "Analyze All Missing DR (\(currentIssues.count))"
+                                        : (health.selectedCategory == .fakeLossless
+                                            ? "Audit All Lossless Files (\(unauditedLosslessCount))"
+                                            : "Find \(health.selectedCategory.rawValue) Fixes")
+                                )
+                                .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
-                        .help(health.selectedCategory == .dynamicRange ? "Measure Dynamic Range for all unanalyzed songs" : "Search for fixes in \(health.selectedCategory.rawValue)")
+                        .help(
+                            health.selectedCategory == .dynamicRange ? "Measure Dynamic Range for all unanalyzed songs" :
+                            (health.selectedCategory == .fakeLossless ? "Inspect high-frequency FFT spectrum of all unaudited lossless files" : "Search for fixes in \(health.selectedCategory.rawValue)")
+                        )
                     }
                 }
 
@@ -239,9 +251,7 @@ public struct HealthView: View {
                         health.approveAllReady(for: health.selectedCategory)
                     } label: {
                         Label(
-                            health.selectedCategory == .duplicates
-                                ? "Trash All Duplicates (\(readyCount))"
-                                : "Approve All \(health.selectedCategory.rawValue) (\(readyCount))",
+                            "Approve All \(health.selectedCategory.rawValue) (\(readyCount))",
                             systemImage: "checkmark.circle.fill"
                         )
                         .font(.system(size: 12, weight: .semibold))
@@ -277,6 +287,33 @@ public struct HealthView: View {
                         .toggleStyle(.switch)
                         .controlSize(.small)
                         .help("When enabled, clicking 'Re-check Library' will automatically measure Dynamic Range for all unanalyzed songs.")
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(Color.accentColor.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(Color.accentColor.opacity(0.2), lineWidth: 1)
+                )
+                .padding(.horizontal, 24)
+                .padding(.bottom, 6)
+            } else if health.selectedCategory == .fakeLossless {
+                HStack(alignment: .center, spacing: 14) {
+                    Image(systemName: "waveform.path.ecg.rectangle")
+                        .font(.system(size: 24))
+                        .foregroundStyle(Color.accentColor)
+
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Lossless Transcode Audit (16k-Point FFT Spectral Inspection)")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Checks FLAC, ALAC, WAV, AIFF, and APE files for sharp in-band brickwall cutoffs (~16 kHz) caused by low-bitrate lossy MP3 transcoding. Verified files clear automatically; dark masters can be dismissed via Ignore.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
                 }
                 .padding(12)
                 .background(
@@ -393,7 +430,7 @@ private struct HealthIssueRowView: View {
                     if let note = issue.statusNote {
                         Text(note)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(issue.fixFound ? Color.green : Color.secondary)
+                            .foregroundStyle(issue.category == .fakeLossless && issue.fixFound ? Color.red : (issue.fixFound ? Color.green : Color.secondary))
                     }
                 }
 
@@ -408,9 +445,9 @@ private struct HealthIssueRowView: View {
                 }
 
                 HStack(spacing: 6) {
-                    Text("Proposed:")
+                    Text(issue.category == .fakeLossless && issue.fixFound ? "Finding:" : "Proposed:")
                         .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(issue.fixFound ? Color.green : Color.secondary)
+                        .foregroundStyle(issue.category == .fakeLossless && issue.fixFound ? Color.red : (issue.fixFound ? Color.green : Color.secondary))
                     Text(issue.proposedSummary)
                         .font(.system(size: 11, weight: issue.fixFound ? .medium : .regular))
                         .foregroundStyle(issue.fixFound ? Color.primary : Color.secondary)
@@ -459,16 +496,32 @@ private struct HealthIssueRowView: View {
                     .help("Measure Dynamic Range for this song")
                 }
 
+                if issue.category == .fakeLossless && !issue.fixFound {
+                    Button {
+                        health.analyzeSingleLosslessAudit(for: issue)
+                    } label: {
+                        Label("Audit", systemImage: "waveform.path.ecg.rectangle")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(issue.isSearchingFix || health.isFindingFixes)
+                    .help("Inspect high-frequency FFT spectrum for this song")
+                }
+
                 Button {
                     health.approveIssue(issue)
                 } label: {
-                    Label(issue.category == .duplicates ? "Trash Duplicate" : "Approve", systemImage: "checkmark")
-                        .font(.system(size: 11, weight: .semibold))
+                    Label(
+                        issue.category == .fakeLossless ? "Reveal" : "Approve",
+                        systemImage: issue.category == .fakeLossless ? "folder" : "checkmark"
+                    )
+                    .font(.system(size: 11, weight: .semibold))
                 }
                 .buttonStyle(.glassProminent)
                 .controlSize(.small)
                 .disabled(!issue.fixFound)
-                .help("Approve and apply this fix")
+                .help(issue.category == .fakeLossless ? "Reveal suspect file in Finder" : "Approve and apply this fix")
 
                 Button {
                     health.ignoreIssue(issue)

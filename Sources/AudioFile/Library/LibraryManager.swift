@@ -121,6 +121,54 @@ public final class LibraryManager: ObservableObject {
                     modified = true
                 }
             }
+            var distinctCueOffsetsByPath: [String: Set<Double>] = [:]
+            for item in loaded where item.isCueTrack {
+                distinctCueOffsetsByPath[item.path.standardizedFileURL.path, default: []].insert(item.startTimeOffset ?? 0)
+            }
+            var cleanedLoaded: [Track] = []
+            cleanedLoaded.reserveCapacity(loaded.count)
+            var seenRestoredCuePaths: Set<String> = []
+            for item in loaded {
+                let stdPath = item.path.standardizedFileURL.path
+                if item.isCueTrack && (distinctCueOffsetsByPath[stdPath]?.count ?? 0) <= 1 {
+                    modified = true
+                    guard seenRestoredCuePaths.insert(stdPath).inserted else {
+                        continue
+                    }
+                    let canonicalId = Track.generateId(for: item.path)
+                    cleanedLoaded.append(Track(
+                        id: canonicalId,
+                        path: item.path,
+                        title: item.title,
+                        artist: item.artist,
+                        album: item.album,
+                        albumArtist: item.albumArtist,
+                        genre: item.genre,
+                        year: item.year,
+                        releaseDate: item.releaseDate,
+                        trackNumber: item.trackNumber,
+                        discNumber: item.discNumber,
+                        duration: item.duration,
+                        format: item.format,
+                        sampleRate: item.sampleRate,
+                        bitDepth: item.bitDepth,
+                        bitrate: item.bitrate,
+                        hasCoverArt: item.hasCoverArt,
+                        fileSize: item.fileSize,
+                        modifiedDate: nil,
+                        dynamicRange: item.dynamicRange,
+                        playCount: item.playCount,
+                        startTimeOffset: nil,
+                        endTimeOffset: nil,
+                        replayGainTrackDb: item.replayGainTrackDb,
+                        replayGainAlbumDb: item.replayGainAlbumDb,
+                        replayGainPeak: item.replayGainPeak
+                    ))
+                } else {
+                    cleanedLoaded.append(item)
+                }
+            }
+            loaded = cleanedLoaded
             let savedOverrides = LibraryHealthManager.readOverridesFromDisk()
             let storedScores = DynamicRangeEngine.readStoredScores()
             for i in loaded.indices {
@@ -253,15 +301,26 @@ public final class LibraryManager: ObservableObject {
 
         Task.detached(priority: .utility) {
             let savedOverrides = fullRescan ? [:] : LibraryHealthManager.readOverridesFromDisk()
+            let overriddenIds = Set(savedOverrides.keys)
+            let storedDRScores = DynamicRangeEngine.readStoredScores()
             var existingMap: [String: Track] = [:]
+            var existingByIdMap: [String: Track] = [:]
+            var existingPlayCountByPath: [String: Int] = [:]
             if !fullRescan {
                 for track in await self.tracks {
-                    existingMap[track.path.standardizedFileURL.path] = track
+                    let stdPath = track.path.standardizedFileURL.path
+                    if let pc = track.playCount, pc > (existingPlayCountByPath[stdPath] ?? 0) {
+                        existingPlayCountByPath[stdPath] = pc
+                    }
+                    existingByIdMap[track.id] = track
+                    if !track.isCueTrack {
+                        existingMap[stdPath] = track
+                    }
                 }
             }
 
-            var discoveredTracks: [Track] = []
-            var checkedCount = 0
+            var cueURLs: [URL] = []
+            var audioURLs: [URL] = []
 
             for folder in folders {
                 guard FileManager.default.fileExists(atPath: folder.path) else { continue }
@@ -273,43 +332,72 @@ public final class LibraryManager: ObservableObject {
                 )
 
                 while let fileURL = enumerator?.nextObject() as? URL {
-                    guard MetadataReader.isAudioFile(fileURL) else { continue }
-                    checkedCount += 1
-
-                    let filePath = fileURL.standardizedFileURL.path
-                    let fileValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
-                    let curSize = fileValues?.fileSize.map { UInt64($0) }
-                    let curDate = fileValues?.contentModificationDate
-                    let folderHasArt = MetadataReader.hasFolderArtwork(in: fileURL.deletingLastPathComponent())
-
-                    if !fullRescan, let existing = existingMap[filePath],
-                       existing.fileSize == curSize,
-                       existing.modifiedDate == curDate,
-                       existing.trackNumber != nil,
-                       (existing.sampleRate ?? 44100) >= 8000,
-                       existing.duration > 0 && existing.duration < 86_400,
-                       savedOverrides[existing.id] == nil,
-                       (!existing.hasCoverArt || folderHasArt) {
-                        // Unmodified file with complete track metadata, preserve cached track metadata!
-                        discoveredTracks.append(existing)
-                    } else {
-                        // New or modified file: read metadata
-                        if var track = await MetadataReader.readTrack(at: fileURL) {
-                            if let existing = existingMap[filePath] {
-                                track.dynamicRange = existing.dynamicRange
-                                track.playCount = existing.playCount
-                            }
-                            discoveredTracks.append(track)
-                        }
+                    if fileURL.pathExtension.lowercased() == "cue" {
+                        cueURLs.append(fileURL)
+                    } else if MetadataReader.isAudioFile(fileURL) {
+                        audioURLs.append(fileURL)
                     }
+                }
+            }
 
-                    if checkedCount % 25 == 0 {
-                        let count = discoveredTracks.count
-                        await MainActor.run {
-                            self.syncStatusText = fullRescan
-                                ? "Rescanned \(count) tracks…"
-                                : "Checked \(count) tracks…"
+            var discoveredTracks: [Track] = []
+            var cueBackingPaths: Set<String> = []
+            var checkedCount = 0
+
+            for cueURL in cueURLs {
+                let parsed = await CueSheetParser.parse(
+                    cueURL: cueURL,
+                    existingById: existingByIdMap,
+                    overriddenTrackIds: overriddenIds
+                )
+                if !parsed.tracks.isEmpty {
+                    discoveredTracks.append(contentsOf: parsed.tracks)
+                    cueBackingPaths.formUnion(parsed.backingFilePaths)
+                    checkedCount += parsed.tracks.count
+                }
+            }
+
+            for fileURL in audioURLs {
+                let filePath = fileURL.standardizedFileURL.path
+                guard !cueBackingPaths.contains(filePath) else { continue }
+                checkedCount += 1
+
+                let fileValues = try? fileURL.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
+                let curSize = fileValues?.fileSize.map { UInt64($0) }
+                let curDate = fileValues?.contentModificationDate
+                let folderHasArt = MetadataReader.hasFolderArtwork(in: fileURL.deletingLastPathComponent())
+
+                if !fullRescan, var existing = existingMap[filePath],
+                   existing.fileSize == curSize,
+                   existing.modifiedDate == curDate,
+                   existing.trackNumber != nil,
+                   (existing.sampleRate ?? 44100) >= 8000,
+                   existing.duration > 0 && existing.duration < 86_400,
+                   savedOverrides[existing.id] == nil,
+                   (!existing.hasCoverArt || folderHasArt) {
+                    // Unmodified file with complete track metadata, preserve cached track metadata!
+                    if existing.dynamicRange == nil, let cachedDR = storedDRScores[existing.id] {
+                        existing.dynamicRange = cachedDR
+                    }
+                    discoveredTracks.append(existing)
+                } else {
+                    // New or modified file: read metadata
+                    if var track = await MetadataReader.readTrack(at: fileURL) {
+                        track.dynamicRange = existingMap[filePath]?.dynamicRange ?? storedDRScores[track.id]
+                        let priorPlays = max(existingMap[filePath]?.playCount ?? 0, existingPlayCountByPath[filePath] ?? 0)
+                        if priorPlays > 0 {
+                            track.playCount = priorPlays
                         }
+                        discoveredTracks.append(track)
+                    }
+                }
+
+                if checkedCount % 25 == 0 {
+                    let count = discoveredTracks.count
+                    await MainActor.run {
+                        self.syncStatusText = fullRescan
+                            ? "Rescanned \(count) tracks…"
+                            : "Checked \(count) tracks…"
                     }
                 }
             }

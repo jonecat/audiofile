@@ -103,6 +103,9 @@ public struct MetadataReader: Sendable {
         var bitDepth: Int? = nil
         var bitrate: Int? = nil
         var hasCoverArt: Bool = false
+        var replayGainTrackDb: Double? = nil
+        var replayGainAlbumDb: Double? = nil
+        var replayGainPeak: Double? = nil
 
         // 1. File stats
         let fileValues = try? url.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey])
@@ -200,6 +203,17 @@ public struct MetadataReader: Sendable {
                 let rawVal = (try? await item.load(.stringValue)) ?? ""
                 let valueStr = rawVal.trimmingCharacters(in: .whitespacesAndNewlines)
 
+                let extraInfoKey = ((try? await item.load(.extraAttributes))?[.info] as? String ?? "").uppercased()
+                let tagName = [keyStr, idStr, extraInfoKey].joined(separator: " ")
+
+                if tagName.contains("REPLAYGAIN_TRACK_GAIN"), replayGainTrackDb == nil, let db = parseReplayGainValue(valueStr) {
+                    replayGainTrackDb = db
+                } else if tagName.contains("REPLAYGAIN_ALBUM_GAIN"), replayGainAlbumDb == nil, let db = parseReplayGainValue(valueStr) {
+                    replayGainAlbumDb = db
+                } else if (tagName.contains("REPLAYGAIN_TRACK_PEAK") || tagName.contains("REPLAYGAIN_ALBUM_PEAK")), replayGainPeak == nil, let peak = parseReplayGainValue(valueStr), peak > 0 {
+                    replayGainPeak = peak
+                }
+
                 // Skip UUIDs and empty strings for text tags
                 let isId = !valueStr.isEmpty && UUID(uuidString: valueStr) != nil
 
@@ -282,8 +296,18 @@ public struct MetadataReader: Sendable {
             bitrate: bitrate,
             hasCoverArt: hasCoverArt,
             fileSize: fileSize,
-            modifiedDate: modifiedDate
+            modifiedDate: modifiedDate,
+            replayGainTrackDb: replayGainTrackDb,
+            replayGainAlbumDb: replayGainAlbumDb,
+            replayGainPeak: replayGainPeak
         )
+    }
+
+    private static func parseReplayGainValue(_ raw: String) -> Double? {
+        let cleaned = raw
+            .replacingOccurrences(of: "dB", with: "", options: [.caseInsensitive])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return Double(cleaned)
     }
 
     public static func clearArtworkCache() {

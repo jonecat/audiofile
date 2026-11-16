@@ -45,6 +45,42 @@ public enum VisualizerMode: String, Codable, CaseIterable, Identifiable, Sendabl
     }
 }
 
+public enum ReplayGainMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case off = "Off"
+    case track = "Track Gain"
+    case album = "Album Gain"
+
+    public var id: String { rawValue }
+}
+
+public enum EQFilterType: String, Codable, CaseIterable, Sendable {
+    case parametric = "Peak (PK)"
+    case lowShelf = "Low Shelf (LS)"
+    case highShelf = "High Shelf (HS)"
+}
+
+public struct EQBandConfig: Codable, Equatable, Sendable, Identifiable {
+    public var id: Int
+    public var frequency: Double
+    public var gainDb: Float
+    public var qFactor: Double
+    public var filterType: EQFilterType
+
+    public init(
+        id: Int,
+        frequency: Double,
+        gainDb: Float = 0,
+        qFactor: Double = 1.41,
+        filterType: EQFilterType = .parametric
+    ) {
+        self.id = id
+        self.frequency = frequency
+        self.gainDb = gainDb
+        self.qFactor = qFactor
+        self.filterType = filterType
+    }
+}
+
 public struct AppConfig: Codable, Sendable {
     public var libraryFolders: [URL]
     public var volume: Float
@@ -60,6 +96,26 @@ public struct AppConfig: Codable, Sendable {
     public var artistsColumnWidth: Double
     public var albumsColumnWidth: Double
 
+    // Audiophile audio engine & DSP settings
+    public var selectedOutputDeviceUID: String?
+    public var autoSampleRateSwitching: Bool
+    public var exclusiveHogMode: Bool
+    public var replayGainMode: ReplayGainMode
+    public var replayGainPreampDb: Float
+    public var eqEnabled: Bool
+    public var eqPreampDb: Float
+    public var eqPresetName: String
+    public var eqBands: [EQBandConfig]
+    public var crossfeedEnabled: Bool
+    public var crossfeedLevel: Float
+
+    public static func defaultEQBands() -> [EQBandConfig] {
+        let freqs: [Double] = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+        return freqs.enumerated().map { idx, freq in
+            EQBandConfig(id: idx, frequency: freq, gainDb: 0, qFactor: 1.41, filterType: .parametric)
+        }
+    }
+
     public init(
         libraryFolders: [URL] = AppConfig.defaultFolders(),
         volume: Float = 0.8,
@@ -73,7 +129,18 @@ public struct AppConfig: Codable, Sendable {
         lyricsScale: Double = 1.0,
         autoFetchLyrics: Bool = true,
         artistsColumnWidth: Double = 220.0,
-        albumsColumnWidth: Double = 250.0
+        albumsColumnWidth: Double = 250.0,
+        selectedOutputDeviceUID: String? = nil,
+        autoSampleRateSwitching: Bool = true,
+        exclusiveHogMode: Bool = false,
+        replayGainMode: ReplayGainMode = .off,
+        replayGainPreampDb: Float = 0.0,
+        eqEnabled: Bool = false,
+        eqPreampDb: Float = 0.0,
+        eqPresetName: String = "Flat",
+        eqBands: [EQBandConfig] = AppConfig.defaultEQBands(),
+        crossfeedEnabled: Bool = false,
+        crossfeedLevel: Float = 0.25
     ) {
         self.libraryFolders = libraryFolders
         self.volume = volume
@@ -88,6 +155,17 @@ public struct AppConfig: Codable, Sendable {
         self.autoFetchLyrics = autoFetchLyrics
         self.artistsColumnWidth = artistsColumnWidth
         self.albumsColumnWidth = albumsColumnWidth
+        self.selectedOutputDeviceUID = selectedOutputDeviceUID
+        self.autoSampleRateSwitching = autoSampleRateSwitching
+        self.exclusiveHogMode = exclusiveHogMode
+        self.replayGainMode = replayGainMode
+        self.replayGainPreampDb = replayGainPreampDb
+        self.eqEnabled = eqEnabled
+        self.eqPreampDb = eqPreampDb
+        self.eqPresetName = eqPresetName
+        self.eqBands = eqBands
+        self.crossfeedEnabled = crossfeedEnabled
+        self.crossfeedLevel = crossfeedLevel
     }
 
     public init(from decoder: Decoder) throws {
@@ -105,6 +183,18 @@ public struct AppConfig: Codable, Sendable {
         self.autoFetchLyrics = try container.decodeIfPresent(Bool.self, forKey: .autoFetchLyrics) ?? true
         self.artistsColumnWidth = try container.decodeIfPresent(Double.self, forKey: .artistsColumnWidth) ?? 220.0
         self.albumsColumnWidth = try container.decodeIfPresent(Double.self, forKey: .albumsColumnWidth) ?? 250.0
+        self.selectedOutputDeviceUID = try container.decodeIfPresent(String.self, forKey: .selectedOutputDeviceUID)
+        self.autoSampleRateSwitching = try container.decodeIfPresent(Bool.self, forKey: .autoSampleRateSwitching) ?? true
+        self.exclusiveHogMode = try container.decodeIfPresent(Bool.self, forKey: .exclusiveHogMode) ?? false
+        self.replayGainMode = (try? container.decodeIfPresent(ReplayGainMode.self, forKey: .replayGainMode)) ?? .off
+        self.replayGainPreampDb = try container.decodeIfPresent(Float.self, forKey: .replayGainPreampDb) ?? 0.0
+        self.eqEnabled = try container.decodeIfPresent(Bool.self, forKey: .eqEnabled) ?? false
+        self.eqPreampDb = try container.decodeIfPresent(Float.self, forKey: .eqPreampDb) ?? 0.0
+        self.eqPresetName = try container.decodeIfPresent(String.self, forKey: .eqPresetName) ?? "Flat"
+        let decodedBands = try container.decodeIfPresent([EQBandConfig].self, forKey: .eqBands) ?? AppConfig.defaultEQBands()
+        self.eqBands = decodedBands.count == 10 ? decodedBands : AppConfig.defaultEQBands()
+        self.crossfeedEnabled = try container.decodeIfPresent(Bool.self, forKey: .crossfeedEnabled) ?? false
+        self.crossfeedLevel = try container.decodeIfPresent(Float.self, forKey: .crossfeedLevel) ?? 0.25
     }
 
     public static func defaultFolders() -> [URL] {

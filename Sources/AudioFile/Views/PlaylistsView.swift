@@ -57,6 +57,14 @@ public struct PlaylistsView: View {
 
                         if case .playlist(let playlistId) = section,
                            let playlist = vm.playlists.playlists.first(where: { $0.id == playlistId }) {
+                            Button {
+                                vm.playlists.promptExportM3U(playlist: playlist, library: vm.library)
+                            } label: {
+                                Label("Export M3U8", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(.glass)
+                            .help("Export playlist as .M3U8")
+
                             Button(role: .destructive) {
                                 vm.playlistPendingDeletion = playlist
                             } label: {

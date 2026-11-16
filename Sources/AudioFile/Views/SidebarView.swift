@@ -161,6 +161,10 @@ public struct SidebarView: View {
                             playlists: vm.playlists
                         ))
                         .contextMenu {
+                            Button("Export .M3U8…") {
+                                vm.playlists.promptExportM3U(playlist: playlist, library: vm.library)
+                            }
+                            Divider()
                             Button("Delete Playlist…", role: .destructive) {
                                 vm.playlistPendingDeletion = playlist
                             }
@@ -170,9 +174,31 @@ public struct SidebarView: View {
                         vm.playlists.movePlaylists(from: indices, to: newOffset)
                     }
                 } header: {
-                    HStack {
+                    HStack(spacing: 4) {
                         Text("Playlists")
                         Spacer()
+                        Button {
+                            if let imported = vm.playlists.promptImportM3U(library: vm.library) {
+                                vm.selectedSection = .playlist(imported.id)
+                            }
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(vm.isHoveringImportPlaylist ? Color.primary : Color.secondary)
+                                .frame(width: 20, height: 20)
+                                .background(
+                                    Circle()
+                                        .fill(Color.primary.opacity(vm.isHoveringImportPlaylist ? 0.14 : 0))
+                                )
+                                .contentShape(Circle())
+                                .animation(.easeInOut(duration: 0.15), value: vm.isHoveringImportPlaylist)
+                        }
+                        .buttonStyle(.plain)
+                        .onHover { hovering in
+                            vm.isHoveringImportPlaylist = hovering
+                        }
+                        .help("Import .M3U / .M3U8 Playlist")
+
                         Button {
                             vm.newPlaylistName = ""
                             vm.showingNewPlaylistDialog = true
