@@ -67,7 +67,7 @@ public struct SettingsView: View {
             .padding(24)
             .animation(.easeInOut(duration: 0.2), value: vm.selectedSettingsTab)
         }
-        .frame(width: 620, height: 560)
+        .frame(width: 720, height: 580)
         .alert("Lyrics Cache Cleared", isPresented: $vm.showingCacheClearedAlert) {
             Button("OK", role: .cancel) { }
         } message: {
@@ -96,6 +96,8 @@ public struct SettingsView: View {
                 Text(tab.rawValue)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
             }
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(isSelected ? Color.white : Color.secondary)
             .padding(.horizontal, 14)
             .padding(.vertical, 7)
@@ -106,9 +108,11 @@ public struct SettingsView: View {
                     : .regular.interactive(),
                 in: .capsule
             )
+            .fixedSize(horizontal: true, vertical: false)
         }
         .buttonStyle(.plain)
         .contentShape(.capsule)
+        .fixedSize(horizontal: true, vertical: false)
         .help("\(tab.rawValue) settings")
     }
 
