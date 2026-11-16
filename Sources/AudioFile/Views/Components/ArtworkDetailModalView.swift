@@ -173,7 +173,7 @@ public struct ArtworkDetailModalView: View {
         .frame(width: 540)
         .fixedSize(horizontal: true, vertical: false)
         .task(id: track.id) {
-            await loader.load(track: track)
+            await loader.load(track: track, maxPixelSize: nil)
         }
     }
 }

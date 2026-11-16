@@ -22,7 +22,7 @@ public struct ArtistsView: View {
                 .padding(.bottom, 8)
 
                 List(artists, id: \.self, selection: $vm.selectedArtist) { artist in
-                    let trackCount = vm.library.tracks(for: artist).count
+                    let trackCount = vm.library.trackCount(for: artist)
                     HStack(spacing: 10) {
                         Text(artist)
                             .font(.system(size: 13))
@@ -93,7 +93,7 @@ public struct ArtistsView: View {
                     List(albumList, id: \.self, selection: $vm.selectedAlbum) { album in
                         let songs = vm.library.tracks(for: artist, album: album)
                         HStack(spacing: 10) {
-                            ArtworkView(track: songs.first, cornerRadius: 5, shadowRadius: 0)
+                            ArtworkView(track: songs.first, cornerRadius: 5, shadowRadius: 0, maxPixelSize: 64)
                                 .frame(width: 32, height: 32)
 
                             Text(album)
@@ -192,7 +192,7 @@ public struct ArtistsView: View {
                             }
 
                             // Song Artwork
-                            ArtworkView(track: track, cornerRadius: 5, shadowRadius: 0)
+                            ArtworkView(track: track, cornerRadius: 5, shadowRadius: 0, maxPixelSize: 64)
                                 .frame(width: 32, height: 32)
 
                             // Title (and Album subtitle when viewing all albums for this artist)

@@ -119,6 +119,23 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var sortOrder: [KeyPathComparator<Track>] = [
         .init(\.displayArtist, order: .forward)
     ]
+    @Published public private(set) var songsTableSortRevision: Int = 0
+
+    public var sortOrderBinding: Binding<[KeyPathComparator<Track>]> {
+        Binding(
+            get: { self.sortOrder },
+            set: { newOrder in
+                let cappedOrder = newOrder.count > 2 ? Array(newOrder.prefix(2)) : newOrder
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    self.sortOrder = cappedOrder
+                    self.updateSortedTracks()
+                    self.songsTableSortRevision &+= 1
+                }
+            }
+        )
+    }
     @Published public var showingCacheClearedAlert: Bool = false
     @Published public var showingResetLibraryConfirmation: Bool = false
 
@@ -179,10 +196,10 @@ public final class PlayerViewModel: ObservableObject {
         self.albumsColumnWidth = CGFloat(config.albumsColumnWidth)
 
         VisualizerEngine.shared.setFPS(Double(config.visualizerFPS))
-        VisualizerState.shared.start(fps: config.visualizerFPS)
 
         setupSubscriptions()
-        updateFilteredAndSortedTracks()
+        updateFilteredTracks()
+        updateVisualizerTimerState()
 
         // Kick off incremental background library sync
         library.startSync(folders: config.libraryFolders, fullRescan: false)
@@ -203,11 +220,19 @@ public final class PlayerViewModel: ObservableObject {
             self?.previousTrack()
         }
 
-        // Library track changes -> update filtered/sorted tracks
-        library.$tracks
+        // Library structural changes -> update filtered & sorted tracks
+        library.libraryStructureDidChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
-                self?.updateFilteredAndSortedTracks()
+                self?.updateFilteredTracks()
+            }
+            .store(in: &cancellables)
+
+        // Single/batch metadata updates (play count, DR score) -> patch tracks in place without re-sorting
+        library.trackMetadataDidUpdate
+            .receive(on: RunLoop.main)
+            .sink { [weak self] updatedTracks in
+                self?.updateTracksInPlace(updatedTracks)
             }
             .store(in: &cancellables)
 
@@ -215,15 +240,15 @@ public final class PlayerViewModel: ObservableObject {
         $searchQuery
             .debounce(for: .milliseconds(150), scheduler: RunLoop.main)
             .sink { [weak self] _ in
-                self?.updateFilteredAndSortedTracks()
+                self?.updateFilteredTracks()
             }
             .store(in: &cancellables)
 
-        // Sort order updates -> re-sort
-        $sortOrder
+        // Visualizer timer lifecycle: run only when playing AND viewing Visualizer with panel visible
+        Publishers.CombineLatest3(audio.$state, $selectedSection, $showVisualizer)
             .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.updateFilteredAndSortedTracks()
+            .sink { [weak self] state, section, showVis in
+                self?.updateVisualizerTimerState(state: state, section: section, showVisualizer: showVis)
             }
             .store(in: &cancellables)
 
@@ -332,7 +357,23 @@ public final class PlayerViewModel: ObservableObject {
         config.visualizerFPS = fps
         config.save()
         VisualizerEngine.shared.setFPS(Double(fps))
-        VisualizerState.shared.start(fps: fps)
+        updateVisualizerTimerState()
+    }
+
+    public func updateVisualizerTimerState(
+        state: PlaybackState? = nil,
+        section: NavigationSection? = nil,
+        showVisualizer: Bool? = nil
+    ) {
+        let effectiveState = state ?? audio.state
+        let effectiveSection = section ?? selectedSection
+        let effectiveShow = showVisualizer ?? self.showVisualizer
+
+        if effectiveState == .playing && effectiveSection == .visualizer && effectiveShow {
+            visualizer.start(fps: config.visualizerFPS)
+        } else {
+            visualizer.stop(resetFrame: effectiveState == .stopped || !effectiveShow)
+        }
     }
 
     // MARK: - Queue & Playback
@@ -654,8 +695,7 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     public var favoriteTracks: [Track] {
-        let trackMap = Dictionary(uniqueKeysWithValues: library.tracks.map { ($0.id, $0) })
-        return playlists.favorites.compactMap { trackMap[$0] }
+        playlists.favorites.compactMap { library.track(forId: $0) }
     }
 
     public func resetAndRescanLibrary() {
@@ -787,16 +827,147 @@ public final class PlayerViewModel: ObservableObject {
     }
 
     // MARK: - Search Filtering & Sorting
- 
+
     public func updateFilteredAndSortedTracks() {
+        updateFilteredTracks()
+    }
+
+    public func updateFilteredTracks() {
         let trimmed = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
         let filtered: [Track]
         if trimmed.isEmpty {
             filtered = library.tracks
         } else {
-            filtered = library.tracks.filter { $0.matches(query: trimmed) }
+            let q = trimmed.lowercased()
+            filtered = library.tracks.filter { $0.searchHaystack.contains(q) }
         }
         self.filteredTracks = filtered
-        self.sortedTracks = filtered.sorted(using: sortOrder)
+        updateSortedTracks()
+    }
+
+    public func updateSortedTracks() {
+        guard !filteredTracks.isEmpty else {
+            self.sortedTracks = []
+            return
+        }
+        let order = sortOrder
+        if order.isEmpty {
+            self.sortedTracks = filteredTracks
+            return
+        }
+
+        guard order.allSatisfy({ Self.isFastSortableKeyPath($0.keyPath) }) else {
+            self.sortedTracks = filteredTracks.sorted(using: order)
+            return
+        }
+
+        self.sortedTracks = filteredTracks.sorted { a, b in
+            for comp in order {
+                if let cmp = Self.compareTracks(a, b, using: comp), cmp != .orderedSame {
+                    return cmp == .orderedAscending
+                }
+            }
+            if a.albumSortKey != b.albumSortKey {
+                return a.albumSortKey < b.albumSortKey
+            }
+            let discA = a.discNumber ?? 1
+            let discB = b.discNumber ?? 1
+            if discA != discB {
+                return discA < discB
+            }
+            let trackA = a.trackNumber ?? 0
+            let trackB = b.trackNumber ?? 0
+            if trackA != trackB {
+                return trackA < trackB
+            }
+            if a.titleSortKey != b.titleSortKey {
+                return a.titleSortKey < b.titleSortKey
+            }
+            return a.id < b.id
+        }
+    }
+
+    public func updateTracksInPlace(_ updatedTracks: [Track]) {
+        guard !updatedTracks.isEmpty else { return }
+        let updatesById = Dictionary(uniqueKeysWithValues: updatedTracks.map { ($0.id, $0) })
+
+        var filteredCopy = filteredTracks
+        var filteredChanged = false
+        for i in filteredCopy.indices {
+            if let updated = updatesById[filteredCopy[i].id] {
+                filteredCopy[i] = updated
+                filteredChanged = true
+            }
+        }
+        if filteredChanged {
+            self.filteredTracks = filteredCopy
+        }
+
+        var sortedCopy = sortedTracks
+        var sortedChanged = false
+        for i in sortedCopy.indices {
+            if let updated = updatesById[sortedCopy[i].id] {
+                sortedCopy[i] = updated
+                sortedChanged = true
+            }
+        }
+        if sortedChanged {
+            self.sortedTracks = sortedCopy
+        }
+    }
+
+    private static func isFastSortableKeyPath(_ keyPath: AnyKeyPath) -> Bool {
+        switch keyPath {
+        case \Track.displayTitle,
+             \Track.displayArtist,
+             \Track.displayAlbum,
+             \Track.duration,
+             \Track.playCountSortKey,
+             \Track.dynamicRangeSortKey,
+             \Track.format:
+            return true
+        default:
+            return false
+        }
+    }
+
+    private static func compareTracks(
+        _ a: Track,
+        _ b: Track,
+        using comparator: KeyPathComparator<Track>
+    ) -> ComparisonResult? {
+        let result: ComparisonResult
+        switch comparator.keyPath {
+        case \Track.displayTitle:
+            if a.titleSortKey == b.titleSortKey { result = .orderedSame }
+            else { result = a.titleSortKey < b.titleSortKey ? .orderedAscending : .orderedDescending }
+        case \Track.displayArtist:
+            if a.artistSortKey == b.artistSortKey { result = .orderedSame }
+            else { result = a.artistSortKey < b.artistSortKey ? .orderedAscending : .orderedDescending }
+        case \Track.displayAlbum:
+            if a.albumSortKey == b.albumSortKey { result = .orderedSame }
+            else { result = a.albumSortKey < b.albumSortKey ? .orderedAscending : .orderedDescending }
+        case \Track.duration:
+            if a.duration == b.duration { result = .orderedSame }
+            else { result = a.duration < b.duration ? .orderedAscending : .orderedDescending }
+        case \Track.playCountSortKey:
+            let pa = a.playCountSortKey
+            let pb = b.playCountSortKey
+            if pa == pb { result = .orderedSame }
+            else { result = pa < pb ? .orderedAscending : .orderedDescending }
+        case \Track.dynamicRangeSortKey:
+            let da = a.dynamicRangeSortKey
+            let db = b.dynamicRangeSortKey
+            if da == db { result = .orderedSame }
+            else { result = da < db ? .orderedAscending : .orderedDescending }
+        case \Track.format:
+            if a.format == b.format { result = .orderedSame }
+            else { result = a.format < b.format ? .orderedAscending : .orderedDescending }
+        default:
+            return nil
+        }
+        if result == .orderedSame { return .orderedSame }
+        if comparator.order == .forward { return result }
+        return result == .orderedAscending ? .orderedDescending : .orderedAscending
     }
 }

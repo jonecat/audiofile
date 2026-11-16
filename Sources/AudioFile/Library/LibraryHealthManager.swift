@@ -156,6 +156,12 @@ public final class LibraryHealthManager: ObservableObject {
     public private(set) var overrides: [String: TrackMetadataOverride] = [:]
     private var ignoredIssueIds: Set<String> = []
     private var cancellables = Set<AnyCancellable>()
+    private var analyzeTask: Task<Void, Never>?
+    private var analyzeGeneration: UInt64 = 0
+
+    private nonisolated static let messyTitlePattern1Regex = try! NSRegularExpression(pattern: #"^(\d{1,3})\s*[-–.]\s*([^-–]+?)\s*[-–]\s*(.+)$"#)
+    private nonisolated static let messyTitlePattern2Regex = try! NSRegularExpression(pattern: #"^(\d{1,3})(?:\s*[-–.]\s*|\s+)(.+)$"#)
+    private nonisolated static let cleanTitlePrefixRegex = try! NSRegularExpression(pattern: #"^\d{1,3}[\s.\-_]+"#)
 
     private nonisolated static var overridesURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -176,12 +182,16 @@ public final class LibraryHealthManager: ObservableObject {
         loadOverrides()
         loadIgnoredIssues()
 
-        LibraryManager.shared.$tracks
+        LibraryManager.shared.libraryStructureDidChange
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in
                 self?.analyzeLibrary()
             }
             .store(in: &cancellables)
+
+        if !LibraryManager.shared.tracks.isEmpty {
+            analyzeLibrary()
+        }
     }
 
     // MARK: - Persistence for Overrides & Ignored Issues
@@ -309,6 +319,7 @@ public final class LibraryHealthManager: ObservableObject {
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(550))
             analyzeLibrary()
+            await analyzeTask?.value
 
             if includeDynamicRangeAnalysis {
                 let drIssues = issues(for: .dynamicRange)
@@ -328,20 +339,58 @@ public final class LibraryHealthManager: ObservableObject {
 
     public func analyzeLibrary() {
         let tracks = LibraryManager.shared.tracks
+        analyzeTask?.cancel()
+        analyzeGeneration &+= 1
+        let generation = analyzeGeneration
+
         guard !tracks.isEmpty else {
+            analyzeTask = nil
             issues = []
             lastCheckedDate = Date()
+            isAnalyzing = false
             return
         }
 
         isAnalyzing = true
-        var detected: [HealthIssue] = []
+        let ignoredSnapshot = ignoredIssueIds
+        let existingByIdSnapshot = Dictionary(uniqueKeysWithValues: issues.map { ($0.id, $0) })
 
-        // Preserve any previously fetched remote fixes by issue ID
-        let existingById = Dictionary(uniqueKeysWithValues: issues.map { ($0.id, $0) })
+        analyzeTask = Task { @MainActor [weak self] in
+            let detected = await Task.detached(priority: .utility) { () -> [HealthIssue] in
+                Self.computeHealthIssues(
+                    tracks: tracks,
+                    ignoredIssueIds: ignoredSnapshot,
+                    existingById: existingByIdSnapshot
+                )
+            }.value
+
+            guard !Task.isCancelled, let self = self, self.analyzeGeneration == generation else {
+                return
+            }
+
+            self.issues = detected
+            self.lastCheckedDate = Date()
+            self.isAnalyzing = false
+            self.analyzeTask = nil
+
+            // Auto-select first category that has issues if current category is empty
+            if self.issues(for: self.selectedCategory).isEmpty,
+               let firstNonEmpty = HealthIssueCategory.allCases.first(where: { !self.issues(for: $0).isEmpty }) {
+                self.selectedCategory = firstNonEmpty
+            }
+        }
+    }
+
+    private nonisolated static func computeHealthIssues(
+        tracks: [Track],
+        ignoredIssueIds: Set<String>,
+        existingById: [String: HealthIssue]
+    ) -> [HealthIssue] {
+        var detected: [HealthIssue] = []
 
         // 1. Missing or Messy Info (Title has baked-in track/artist prefix, Unknown Artist/Album, or missing Track #)
         for track in tracks {
+            if Task.isCancelled { return [] }
             let issueId = "info_\(track.id)"
             guard !ignoredIssueIds.contains(issueId) else { continue }
 
@@ -373,6 +422,7 @@ public final class LibraryHealthManager: ObservableObject {
             albumGroups[key, default: []].append(track)
         }
         for (_, group) in albumGroups.sorted(by: { $0.value[0].displayAlbum < $1.value[0].displayAlbum }) {
+            if Task.isCancelled { return [] }
             let hasAnyArt = group.contains(where: { $0.hasCoverArt })
             if !hasAnyArt, let sample = group.first {
                 let issueId = "art_\(sample.displayAlbumArtist)_\(sample.displayAlbum)"
@@ -403,6 +453,7 @@ public final class LibraryHealthManager: ObservableObject {
             folderGroups[folderPath, default: []].append(track)
         }
         for (folderPath, group) in folderGroups where group.count > 1 {
+            if Task.isCancelled { return [] }
             let uniqueAlbums = Set(group.map { $0.displayAlbum })
             let uniqueAlbumArtists = Set(group.map { $0.displayAlbumArtist })
             if uniqueAlbums.count > 1 || uniqueAlbumArtists.count > 1 {
@@ -449,6 +500,7 @@ public final class LibraryHealthManager: ObservableObject {
             sigGroups[key, default: []].append(track)
         }
         for (key, group) in sigGroups where group.count > 1 {
+            if Task.isCancelled { return [] }
             // Sort by quality descending so group[0] is the best keeper
             let ranked = group.sorted { Self.qualityScore($0) > Self.qualityScore($1) }
             let keeper = ranked[0]
@@ -472,11 +524,14 @@ public final class LibraryHealthManager: ObservableObject {
             }
         }
 
-        // 5. Missing Synced Lyrics
+        // 5. Missing Synced Lyrics (batch-read cache directory contents once)
+        let lyricsCacheDir = LRCLIBClient.cacheDirectory
+        let cachedLyricsFiles = Set((try? FileManager.default.contentsOfDirectory(atPath: lyricsCacheDir.path)) ?? [])
         for track in tracks {
+            if Task.isCancelled { return [] }
             let issueId = "lyrics_\(track.id)"
             guard !ignoredIssueIds.contains(issueId) else { continue }
-            if !Self.hasCachedOrLocalLyrics(for: track) {
+            if !Self.hasCachedOrLocalLyrics(for: track, cachedFilenames: cachedLyricsFiles) {
                 if let prev = existingById[issueId], prev.fixFound {
                     detected.append(prev)
                 } else {
@@ -497,6 +552,7 @@ public final class LibraryHealthManager: ObservableObject {
 
         // 6. Missing Dynamic Range
         for track in tracks {
+            if Task.isCancelled { return [] }
             let issueId = "dr_\(track.id)"
             guard !ignoredIssueIds.contains(issueId) else { continue }
             if track.dynamicRange == nil {
@@ -518,15 +574,7 @@ public final class LibraryHealthManager: ObservableObject {
             }
         }
 
-        self.issues = detected
-        self.lastCheckedDate = Date()
-        self.isAnalyzing = false
-
-        // Auto-select first category that has issues if current category is empty
-        if self.issues(for: selectedCategory).isEmpty,
-           let firstNonEmpty = HealthIssueCategory.allCases.first(where: { !self.issues(for: $0).isEmpty }) {
-            selectedCategory = firstNonEmpty
-        }
+        return detected
     }
 
     // MARK: - Diagnose Track Info (Filename / Tag Heuristics)
@@ -539,7 +587,7 @@ public final class LibraryHealthManager: ObservableObject {
         let hasImmediateFix: Bool
     }
 
-    private static func diagnoseTrackInfo(_ track: Track) -> TrackInfoDiagnosis? {
+    private nonisolated static func diagnoseTrackInfo(_ track: Track) -> TrackInfoDiagnosis? {
         var reasons: [String] = []
         var proposedTitle: String?
         var proposedArtist: String?
@@ -618,12 +666,12 @@ public final class LibraryHealthManager: ObservableObject {
     /// Parses messy titles such as:
     /// - `"01 - Kotaro Fukuma - Ave Maria, CG 89..."` -> `(track: 1, artist: "Kotaro Fukuma", title: "Ave Maria, CG 89...")`
     /// - `"03 - Song Title"` -> `(track: 3, artist: nil, title: "Song Title")`
-    private static func parseMessyTitle(_ title: String, artist: String) -> (trackNumber: Int?, artist: String?, cleanTitle: String?) {
+    private nonisolated static func parseMessyTitle(_ title: String, artist: String) -> (trackNumber: Int?, artist: String?, cleanTitle: String?) {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let range = NSRange(trimmed.startIndex..., in: trimmed)
 
         // Pattern 1: "01 - Artist Name - Song Title"
-        if let regex = try? NSRegularExpression(pattern: #"^(\d{1,3})\s*[-–.]\s*([^-–]+?)\s*[-–]\s*(.+)$"#),
-           let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+        if let match = messyTitlePattern1Regex.firstMatch(in: trimmed, range: range),
            let numRange = Range(match.range(at: 1), in: trimmed),
            let artRange = Range(match.range(at: 2), in: trimmed),
            let titleRange = Range(match.range(at: 3), in: trimmed),
@@ -636,8 +684,7 @@ public final class LibraryHealthManager: ObservableObject {
         }
 
         // Pattern 2: "01 - Song Title" or "01. Song Title"
-        if let regex = try? NSRegularExpression(pattern: #"^(\d{1,3})(?:\s*[-–.]\s*|\s+)(.+)$"#),
-           let match = regex.firstMatch(in: trimmed, range: NSRange(trimmed.startIndex..., in: trimmed)),
+        if let match = messyTitlePattern2Regex.firstMatch(in: trimmed, range: range),
            let numRange = Range(match.range(at: 1), in: trimmed),
            let titleRange = Range(match.range(at: 2), in: trimmed),
            let num = Int(trimmed[numRange]),
@@ -913,6 +960,7 @@ public final class LibraryHealthManager: ObservableObject {
             let albumDir = issue.primaryTrack.path.deletingLastPathComponent()
             let coverURL = albumDir.appendingPathComponent("cover.jpg")
             try? artData.write(to: coverURL, options: .atomic)
+            MetadataReader.clearArtworkCache()
 
             for trackId in issue.trackIds {
                 var merged = overrides[trackId] ?? TrackMetadataOverride()
@@ -1161,7 +1209,7 @@ public final class LibraryHealthManager: ObservableObject {
 
     // MARK: - Helpers
 
-    private static func hasCachedOrLocalLyrics(for track: Track) -> Bool {
+    private nonisolated static func hasCachedOrLocalLyrics(for track: Track, cachedFilenames: Set<String>) -> Bool {
         let localLRC = track.path.deletingPathExtension().appendingPathExtension("lrc")
         if FileManager.default.fileExists(atPath: localLRC.path) {
             return true
@@ -1169,11 +1217,11 @@ public final class LibraryHealthManager: ObservableObject {
         let safeArtist = track.artist.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -")).inverted).joined()
         let safeTitle = track.title.components(separatedBy: CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -")).inverted).joined()
         let filename = "\(safeArtist.trimmingCharacters(in: .whitespaces))_\(safeTitle.trimmingCharacters(in: .whitespaces)).lrc"
-        let cachedURL = LRCLIBClient.cacheDirectory.appendingPathComponent(filename.isEmpty ? "unknown.lrc" : filename)
-        return FileManager.default.fileExists(atPath: cachedURL.path)
+        let resolvedName = filename.isEmpty ? "unknown.lrc" : filename
+        return cachedFilenames.contains(resolvedName)
     }
 
-    private static func mostFrequent(in values: [String]) -> String? {
+    private nonisolated static func mostFrequent(in values: [String]) -> String? {
         var counts: [String: Int] = [:]
         for v in values where !v.isEmpty && v != "Unknown Album" && v != "Unknown Artist" {
             counts[v, default: 0] += 1
@@ -1181,15 +1229,13 @@ public final class LibraryHealthManager: ObservableObject {
         return counts.max(by: { $0.value < $1.value })?.key
     }
 
-    private static func cleanTitleForComparison(_ title: String) -> String {
+    private nonisolated static func cleanTitleForComparison(_ title: String) -> String {
         var s = title.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
-        if let regex = try? NSRegularExpression(pattern: #"^\d{1,3}[\s.\-_]+"#) {
-            s = regex.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
-        }
+        s = cleanTitlePrefixRegex.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "")
         return s.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func qualityScore(_ track: Track) -> Int {
+    private nonisolated static func qualityScore(_ track: Track) -> Int {
         var score = 0
         if track.isLossless { score += 10_000 }
         score += (track.bitDepth ?? 16) * 100

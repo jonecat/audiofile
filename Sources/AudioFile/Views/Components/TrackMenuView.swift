@@ -2,13 +2,15 @@ import SwiftUI
 import AppKit
 
 public struct TrackMenuItems: View {
-    @ObservedObject var vm: PlayerViewModel
-    public let tracks: [Track]
-    public let trackList: [Track]
+    public let vm: PlayerViewModel
+    private let explicitTracks: [Track]?
+    private let singleTrack: Track?
+    private let useSelectionIfHighlighted: Bool
+    public let trackListProvider: () -> [Track]
     public var removeAction: (() -> Void)? = nil
 
     public var track: Track? {
-        tracks.first
+        explicitTracks?.first ?? singleTrack
     }
 
     public init(
@@ -18,8 +20,10 @@ public struct TrackMenuItems: View {
         removeAction: (() -> Void)? = nil
     ) {
         self.vm = vm
-        self.tracks = [track]
-        self.trackList = trackList
+        self.explicitTracks = [track]
+        self.singleTrack = track
+        self.useSelectionIfHighlighted = false
+        self.trackListProvider = { trackList }
         self.removeAction = removeAction
     }
 
@@ -30,24 +34,77 @@ public struct TrackMenuItems: View {
         removeAction: (() -> Void)? = nil
     ) {
         self.vm = vm
-        self.tracks = tracks
-        self.trackList = trackList
+        self.explicitTracks = tracks
+        self.singleTrack = tracks.first
+        self.useSelectionIfHighlighted = false
+        self.trackListProvider = { trackList }
+        self.removeAction = removeAction
+    }
+
+    public init(
+        vm: PlayerViewModel,
+        tracks: [Track],
+        trackListProvider: @escaping () -> [Track],
+        removeAction: (() -> Void)? = nil
+    ) {
+        self.vm = vm
+        self.explicitTracks = tracks
+        self.singleTrack = tracks.first
+        self.useSelectionIfHighlighted = false
+        self.trackListProvider = trackListProvider
+        self.removeAction = removeAction
+    }
+
+    public init(
+        vm: PlayerViewModel,
+        track: Track,
+        useSelectionIfHighlighted: Bool,
+        trackListProvider: @escaping () -> [Track],
+        removeAction: (() -> Void)? = nil
+    ) {
+        self.vm = vm
+        self.explicitTracks = nil
+        self.singleTrack = track
+        self.useSelectionIfHighlighted = useSelectionIfHighlighted
+        self.trackListProvider = trackListProvider
         self.removeAction = removeAction
     }
 
     @ViewBuilder
     public var body: some View {
-        if tracks.count == 1, let single = tracks.first {
-            singleTrackBody(single)
-        } else if tracks.count > 1 {
-            multiTrackBody
+        if let tracks = explicitTracks {
+            if tracks.count == 1, let single = tracks.first {
+                singleTrackBody(single)
+            } else if tracks.count > 1 {
+                multiTrackBody(
+                    trackIds: tracks.map(\.id),
+                    resolveTracks: { tracks }
+                )
+            }
+        } else if let single = singleTrack {
+            if useSelectionIfHighlighted,
+               vm.selectedTrackIds.count > 1,
+               vm.selectedTrackIds.contains(single.id) {
+                let selectedIds = vm.selectedTrackIds
+                let orderedIds = Array(selectedIds)
+                multiTrackBody(
+                    trackIds: orderedIds,
+                    resolveTracks: {
+                        let list = trackListProvider()
+                        let matched = list.filter { selectedIds.contains($0.id) }
+                        return matched.isEmpty ? [single] : matched
+                    }
+                )
+            } else {
+                singleTrackBody(single)
+            }
         }
     }
 
     @ViewBuilder
     private func singleTrackBody(_ track: Track) -> some View {
         Button("Play") {
-            vm.playTrack(track, in: trackList)
+            vm.playTrack(track, in: trackListProvider())
         }
 
         Button("Play Next") {
@@ -102,23 +159,28 @@ public struct TrackMenuItems: View {
     }
 
     @ViewBuilder
-    private var multiTrackBody: some View {
-        let count = tracks.count
-        let trackIds = tracks.map(\.id)
+    private func multiTrackBody(
+        trackIds: [String],
+        resolveTracks: @escaping () -> [Track]
+    ) -> some View {
+        let count = trackIds.count
         let allFavorites = trackIds.allSatisfy { vm.playlists.isFavorite(trackId: $0) }
 
         Button("Play (\(count) Songs)") {
-            if let first = tracks.first {
-                vm.playTrack(first, in: trackList)
+            let list = trackListProvider()
+            let resolved = resolveTracks()
+            if let first = resolved.first {
+                vm.playTrack(first, in: list)
             }
         }
 
         Button("Play Next (\(count) Songs)") {
+            let resolved = resolveTracks()
             if let cur = vm.audio.currentTrack,
                let idx = vm.queue.firstIndex(where: { $0.id == cur.id }) {
-                vm.queue.insert(contentsOf: tracks, at: idx + 1)
+                vm.queue.insert(contentsOf: resolved, at: idx + 1)
             } else {
-                vm.queue.append(contentsOf: tracks)
+                vm.queue.append(contentsOf: resolved)
             }
         }
 
@@ -150,23 +212,25 @@ public struct TrackMenuItems: View {
         Divider()
 
         Button("Measure Dynamic Range (\(count) Songs)") {
+            let resolved = resolveTracks()
             Task {
-                for t in tracks {
+                for t in resolved {
                     _ = await DynamicRangeEngine.shared.dynamicRange(for: t, forceRecalculate: true)
                 }
             }
         }
 
         Button("Show in Finder (\(count) Files)") {
-            NSWorkspace.shared.activateFileViewerSelecting(tracks.map(\.path))
+            let resolved = resolveTracks()
+            NSWorkspace.shared.activateFileViewerSelecting(resolved.map(\.path))
         }
     }
 }
 
 public struct TrackKebabMenuButton: View {
-    @ObservedObject var vm: PlayerViewModel
+    public let vm: PlayerViewModel
     public let track: Track
-    public let trackList: [Track]
+    public let trackListProvider: () -> [Track]
     public var isHighlighted: Bool = false
     public var removeAction: (() -> Void)? = nil
 
@@ -179,24 +243,32 @@ public struct TrackKebabMenuButton: View {
     ) {
         self.vm = vm
         self.track = track
-        self.trackList = trackList
+        self.trackListProvider = { trackList }
+        self.isHighlighted = isHighlighted
+        self.removeAction = removeAction
+    }
+
+    public init(
+        vm: PlayerViewModel,
+        track: Track,
+        isHighlighted: Bool = false,
+        removeAction: (() -> Void)? = nil,
+        trackListProvider: @escaping () -> [Track]
+    ) {
+        self.vm = vm
+        self.track = track
+        self.trackListProvider = trackListProvider
         self.isHighlighted = isHighlighted
         self.removeAction = removeAction
     }
 
     public var body: some View {
-        let tracksForMenu: [Track] = {
-            if vm.selectedTrackIds.contains(track.id) && vm.selectedTrackIds.count > 1 {
-                return trackList.filter { vm.selectedTrackIds.contains($0.id) }
-            }
-            return [track]
-        }()
-
         Menu {
             TrackMenuItems(
                 vm: vm,
-                tracks: tracksForMenu,
-                trackList: trackList,
+                track: track,
+                useSelectionIfHighlighted: isHighlighted,
+                trackListProvider: trackListProvider,
                 removeAction: removeAction
             )
         } label: {

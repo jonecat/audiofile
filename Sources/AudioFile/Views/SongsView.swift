@@ -4,7 +4,7 @@ public struct SongsView: View {
     @ObservedObject var vm: PlayerViewModel
 
     public var body: some View {
-        Table(vm.sortedTracks, selection: $vm.selectedTrackIds, sortOrder: $vm.sortOrder) {
+        Table(vm.sortedTracks, selection: $vm.selectedTrackIds, sortOrder: vm.sortOrderBinding) {
             TableColumn("") { track in
                 let isPlaying = (vm.audio.currentTrack?.id == track.id)
                 let isSelected = vm.selectedTrackIds.contains(track.id)
@@ -43,7 +43,7 @@ public struct SongsView: View {
                 let isSelected = vm.selectedTrackIds.contains(track.id)
 
                 HStack(spacing: 10) {
-                    ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0)
+                    ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0, maxPixelSize: 64)
                         .frame(width: 28, height: 28)
 
                     Text(track.displayTitle)
@@ -108,22 +108,8 @@ public struct SongsView: View {
             .width(60)
 
             TableColumn("Quality") { track in
-                if let depth = track.bitDepth, depth > 0, let rateStr = track.formattedSampleRate {
-                    Text("\(depth)-bit • \(rateStr)")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                } else if let br = track.bitrate {
-                    if let rateStr = track.formattedSampleRate {
-                        Text("\(br) kbps • \(rateStr)")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    } else {
-                        Text("\(br) kbps")
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(.secondary)
-                    }
-                } else if let rateStr = track.formattedSampleRate {
-                    Text(rateStr)
+                if !track.qualityColumnText.isEmpty {
+                    Text(track.qualityColumnText)
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.secondary)
                 }
@@ -132,18 +118,24 @@ public struct SongsView: View {
 
             TableColumn("") { track in
                 let isSelected = vm.selectedTrackIds.contains(track.id)
-                TrackKebabMenuButton(vm: vm, track: track, trackList: vm.sortedTracks, isHighlighted: isSelected)
+                TrackKebabMenuButton(
+                    vm: vm,
+                    track: track,
+                    isHighlighted: isSelected,
+                    trackListProvider: { vm.sortedTracks }
+                )
             }
             .width(32)
         }
+        .id(vm.songsTableSortRevision)
         .contextMenu(forSelectionType: String.self) { selection in
-            let selectedTracks = vm.sortedTracks.filter { selection.contains($0.id) }
+            let selectedTracks = selection.compactMap { vm.library.track(forId: $0) }
             if !selectedTracks.isEmpty {
-                TrackMenuItems(vm: vm, tracks: selectedTracks, trackList: vm.sortedTracks)
+                TrackMenuItems(vm: vm, tracks: selectedTracks, trackListProvider: { vm.sortedTracks })
             }
         } primaryAction: { selection in
             if let trackId = selection.first,
-               let track = vm.library.tracks.first(where: { $0.id == trackId }) {
+               let track = vm.library.track(forId: trackId) {
                 vm.playTrack(track, in: vm.sortedTracks)
             }
         }

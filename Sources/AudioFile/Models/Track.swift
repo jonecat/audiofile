@@ -4,25 +4,65 @@ import CryptoKit
 public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let id: String
     public let path: URL
-    public var title: String
-    public var artist: String
-    public var album: String
-    public var albumArtist: String?
-    public var genre: String?
+    public var title: String {
+        didSet { rebuildCachedProperties() }
+    }
+    public var artist: String {
+        didSet { rebuildCachedProperties() }
+    }
+    public var album: String {
+        didSet { rebuildCachedProperties() }
+    }
+    public var albumArtist: String? {
+        didSet { rebuildCachedProperties() }
+    }
+    public var genre: String? {
+        didSet { rebuildCachedProperties() }
+    }
     public var year: Int?
     public var releaseDate: String?
     public var trackNumber: Int?
     public var discNumber: Int?
-    public var duration: TimeInterval
-    public var format: String
-    public var sampleRate: Double?
-    public var bitDepth: Int?
-    public var bitrate: Int?
+    public var duration: TimeInterval {
+        didSet { rebuildCachedProperties() }
+    }
+    public var format: String {
+        didSet { rebuildCachedProperties() }
+    }
+    public var sampleRate: Double? {
+        didSet { rebuildCachedProperties() }
+    }
+    public var bitDepth: Int? {
+        didSet { rebuildCachedProperties() }
+    }
+    public var bitrate: Int? {
+        didSet { rebuildCachedProperties() }
+    }
     public var hasCoverArt: Bool
     public var fileSize: UInt64?
     public var modifiedDate: Date?
     public var dynamicRange: Int?
     public var playCount: Int?
+
+    // Precomputed display, formatting, and sort keys (not persisted)
+    public private(set) var displayTitle: String = ""
+    public private(set) var displayArtist: String = ""
+    public private(set) var displayAlbum: String = ""
+    public private(set) var displayAlbumArtist: String = ""
+    public private(set) var artistSortKey: String = ""
+    public private(set) var titleSortKey: String = ""
+    public private(set) var albumSortKey: String = ""
+    public private(set) var formattedDuration: String = "00:00"
+    public private(set) var formattedSampleRate: String? = nil
+    public private(set) var qualityColumnText: String = ""
+    public private(set) var isLossless: Bool = false
+    public private(set) var searchHaystack: String = ""
+
+    private enum CodingKeys: String, CodingKey {
+        case id, path, title, artist, album, albumArtist, genre, year, releaseDate
+        case trackNumber, discNumber, duration, format, sampleRate, bitDepth, bitrate
+        case hasCoverArt, fileSize, modifiedDate, dynamicRange, playCount
+    }
 
     public init(
         id: String? = nil,
@@ -68,6 +108,173 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         self.modifiedDate = modifiedDate
         self.dynamicRange = dynamicRange
         self.playCount = playCount
+        rebuildCachedProperties()
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.path = try container.decode(URL.self, forKey: .path)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.artist = try container.decode(String.self, forKey: .artist)
+        self.album = try container.decode(String.self, forKey: .album)
+        self.albumArtist = try container.decodeIfPresent(String.self, forKey: .albumArtist)
+        self.genre = try container.decodeIfPresent(String.self, forKey: .genre)
+        self.year = try container.decodeIfPresent(Int.self, forKey: .year)
+        self.releaseDate = try container.decodeIfPresent(String.self, forKey: .releaseDate)
+        self.trackNumber = try container.decodeIfPresent(Int.self, forKey: .trackNumber)
+        self.discNumber = try container.decodeIfPresent(Int.self, forKey: .discNumber)
+        self.duration = try container.decode(TimeInterval.self, forKey: .duration)
+        self.format = try container.decode(String.self, forKey: .format)
+        self.sampleRate = try container.decodeIfPresent(Double.self, forKey: .sampleRate)
+        self.bitDepth = try container.decodeIfPresent(Int.self, forKey: .bitDepth)
+        self.bitrate = try container.decodeIfPresent(Int.self, forKey: .bitrate)
+        self.hasCoverArt = try container.decode(Bool.self, forKey: .hasCoverArt)
+        self.fileSize = try container.decodeIfPresent(UInt64.self, forKey: .fileSize)
+        self.modifiedDate = try container.decodeIfPresent(Date.self, forKey: .modifiedDate)
+        self.dynamicRange = try container.decodeIfPresent(Int.self, forKey: .dynamicRange)
+        self.playCount = try container.decodeIfPresent(Int.self, forKey: .playCount)
+        rebuildCachedProperties()
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(path, forKey: .path)
+        try container.encode(title, forKey: .title)
+        try container.encode(artist, forKey: .artist)
+        try container.encode(album, forKey: .album)
+        try container.encodeIfPresent(albumArtist, forKey: .albumArtist)
+        try container.encodeIfPresent(genre, forKey: .genre)
+        try container.encodeIfPresent(year, forKey: .year)
+        try container.encodeIfPresent(releaseDate, forKey: .releaseDate)
+        try container.encodeIfPresent(trackNumber, forKey: .trackNumber)
+        try container.encodeIfPresent(discNumber, forKey: .discNumber)
+        try container.encode(duration, forKey: .duration)
+        try container.encode(format, forKey: .format)
+        try container.encodeIfPresent(sampleRate, forKey: .sampleRate)
+        try container.encodeIfPresent(bitDepth, forKey: .bitDepth)
+        try container.encodeIfPresent(bitrate, forKey: .bitrate)
+        try container.encode(hasCoverArt, forKey: .hasCoverArt)
+        try container.encodeIfPresent(fileSize, forKey: .fileSize)
+        try container.encodeIfPresent(modifiedDate, forKey: .modifiedDate)
+        try container.encodeIfPresent(dynamicRange, forKey: .dynamicRange)
+        try container.encodeIfPresent(playCount, forKey: .playCount)
+    }
+
+    public static func == (lhs: Track, rhs: Track) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.playCount == rhs.playCount &&
+        lhs.dynamicRange == rhs.dynamicRange &&
+        lhs.hasCoverArt == rhs.hasCoverArt &&
+        lhs.title == rhs.title &&
+        lhs.artist == rhs.artist &&
+        lhs.album == rhs.album &&
+        lhs.albumArtist == rhs.albumArtist &&
+        lhs.trackNumber == rhs.trackNumber &&
+        lhs.discNumber == rhs.discNumber &&
+        lhs.year == rhs.year &&
+        lhs.genre == rhs.genre &&
+        lhs.duration == rhs.duration &&
+        lhs.path == rhs.path &&
+        lhs.format == rhs.format &&
+        lhs.sampleRate == rhs.sampleRate &&
+        lhs.bitDepth == rhs.bitDepth &&
+        lhs.bitrate == rhs.bitrate &&
+        lhs.releaseDate == rhs.releaseDate &&
+        lhs.fileSize == rhs.fileSize &&
+        lhs.modifiedDate == rhs.modifiedDate
+    }
+
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(id)
+    }
+
+    private mutating func rebuildCachedProperties() {
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        displayTitle = trimmedTitle.isEmpty ? path.deletingPathExtension().lastPathComponent : trimmedTitle
+
+        let trimmedArtist = artist.trimmingCharacters(in: .whitespacesAndNewlines)
+        displayArtist = trimmedArtist.isEmpty ? "Unknown Artist" : trimmedArtist
+
+        let trimmedAlbum = album.trimmingCharacters(in: .whitespacesAndNewlines)
+        displayAlbum = trimmedAlbum.isEmpty ? "Unknown Album" : trimmedAlbum
+
+        if let aa = albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !aa.isEmpty,
+           UUID(uuidString: aa) == nil {
+            displayAlbumArtist = aa
+        } else {
+            displayAlbumArtist = displayArtist
+        }
+
+        let loweredArtist = displayArtist.lowercased()
+        if loweredArtist.count > 4 && loweredArtist.hasPrefix("the ") {
+            artistSortKey = String(loweredArtist.dropFirst(4)).trimmingCharacters(in: .whitespaces)
+        } else {
+            artistSortKey = loweredArtist
+        }
+        titleSortKey = displayTitle.lowercased()
+        albumSortKey = displayAlbum.lowercased()
+
+        let safeDuration = duration.isFinite ? max(0, duration) : 0
+        let totalSeconds = Int(safeDuration.rounded())
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        formattedDuration = String(format: "%02d:%02d", minutes, seconds)
+
+        let upperFormat = format.uppercased()
+        isLossless = upperFormat == "FLAC" || upperFormat == "ALAC" || upperFormat == "WAV" || upperFormat == "AIFF" || upperFormat == "AIF" || upperFormat == "APE" || upperFormat == "DSD"
+
+        if let rate = sampleRate, rate > 0 {
+            if rate >= 1_000_000.0 {
+                let mhz = rate / 1_000_000.0
+                if upperFormat == "DSD", rate >= 2_000_000, let tier = Self.dsdTierLabel(for: rate) {
+                    formattedSampleRate = String(format: "%.2f MHz (%@)", mhz, tier)
+                } else {
+                    formattedSampleRate = String(format: "%.2f MHz", mhz)
+                }
+            } else if rate >= 1000.0 {
+                let khz = rate / 1000.0
+                if khz == khz.rounded() {
+                    formattedSampleRate = String(format: "%.0f kHz", khz)
+                } else {
+                    formattedSampleRate = String(format: "%.1f kHz", khz)
+                }
+            } else {
+                formattedSampleRate = "\(Int(rate)) Hz"
+            }
+        } else {
+            formattedSampleRate = nil
+        }
+
+        if let depth = bitDepth, depth > 0, let rateStr = formattedSampleRate {
+            qualityColumnText = "\(depth)-bit • \(rateStr)"
+        } else if let br = bitrate {
+            if let rateStr = formattedSampleRate {
+                qualityColumnText = "\(br) kbps • \(rateStr)"
+            } else {
+                qualityColumnText = "\(br) kbps"
+            }
+        } else if let rateStr = formattedSampleRate {
+            qualityColumnText = rateStr
+        } else {
+            qualityColumnText = ""
+        }
+
+        searchHaystack = "\(title)\0\(artist)\0\(album)\0\(genre ?? "")\0\(path.path)".lowercased()
+    }
+
+    private static func dsdTierLabel(for rate: Double) -> String? {
+        let ratio = Int((rate / 44_100.0).rounded())
+        switch ratio {
+        case 56...72: return "DSD64"
+        case 112...144: return "DSD128"
+        case 224...288: return "DSD256"
+        case 448...576: return "DSD512"
+        case 896...1152: return "DSD1024"
+        default: return nil
+        }
     }
 
     public static func generateId(for path: URL) -> String {
@@ -88,80 +295,15 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         dynamicRange ?? 0
     }
 
-    public var displayTitle: String {
-        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !trimmed.isEmpty { return trimmed }
-        return path.deletingPathExtension().lastPathComponent
-    }
-
-    public var displayArtist: String {
-        let trimmed = artist.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown Artist" : trimmed
-    }
-
     public var formattedYear: String? {
         year.map { String($0) }
-    }
-
-    public var displayAlbumArtist: String {
-        if let aa = albumArtist?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !aa.isEmpty,
-           UUID(uuidString: aa) == nil {
-            return aa
-        }
-        return displayArtist
-    }
-
-    public var displayAlbum: String {
-        let trimmed = album.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? "Unknown Album" : trimmed
-    }
-
-    public var formattedDuration: String {
-        let totalSeconds = Int(duration.rounded())
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    public var isLossless: Bool {
-        let upper = format.uppercased()
-        return upper == "FLAC" || upper == "ALAC" || upper == "WAV" || upper == "AIFF" || upper == "AIF" || upper == "APE" || upper == "DSD"
     }
 
     public var dsdTierLabel: String? {
         guard format.uppercased() == "DSD", let rate = sampleRate, rate >= 2_000_000 else {
             return nil
         }
-        let ratio = Int((rate / 44_100.0).rounded())
-        switch ratio {
-        case 56...72: return "DSD64"
-        case 112...144: return "DSD128"
-        case 224...288: return "DSD256"
-        case 448...576: return "DSD512"
-        case 896...1152: return "DSD1024"
-        default: return nil
-        }
-    }
-
-    public var formattedSampleRate: String? {
-        guard let rate = sampleRate, rate > 0 else { return nil }
-        if rate >= 1_000_000.0 {
-            let mhz = rate / 1_000_000.0
-            if let tier = dsdTierLabel {
-                return String(format: "%.2f MHz (%@)", mhz, tier)
-            }
-            return String(format: "%.2f MHz", mhz)
-        } else if rate >= 1000.0 {
-            let khz = rate / 1000.0
-            if khz == khz.rounded() {
-                return String(format: "%.0f kHz", khz)
-            } else {
-                return String(format: "%.1f kHz", khz)
-            }
-        } else {
-            return "\(Int(rate)) Hz"
-        }
+        return Self.dsdTierLabel(for: rate)
     }
 
     public var shortQualityDescription: String? {
@@ -220,10 +362,6 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public func matches(query: String) -> Bool {
         let q = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if q.isEmpty { return true }
-        return title.lowercased().contains(q)
-            || artist.lowercased().contains(q)
-            || album.lowercased().contains(q)
-            || (genre?.lowercased().contains(q) ?? false)
-            || path.path.lowercased().contains(q)
+        return searchHaystack.contains(q)
     }
 }

@@ -13,6 +13,18 @@ public final class LibraryManager: ObservableObject {
     @Published public private(set) var syncStatusText: String = ""
     @Published public private(set) var syncCompletedMessage: String?
 
+    public let libraryStructureDidChange = PassthroughSubject<Void, Never>()
+    public let trackMetadataDidUpdate = PassthroughSubject<[Track], Never>()
+
+    public private(set) var tracksById: [String: Track] = [:]
+    private var albumsByArtistMap: [String: [String]] = [:]
+    private var tracksByArtistMap: [String: [Track]] = [:]
+    private var tracksByArtistAndAlbumMap: [String: [Track]] = [:]
+    private var trackCountByArtistMap: [String: Int] = [:]
+
+    private var saveDebounceTask: Task<Void, Never>?
+    private let saveQueue = DispatchQueue(label: "com.audiofile.library.save", qos: .utility)
+
     private static var libraryURL: URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let appDir = appSupport.appendingPathComponent("AudioFile", isDirectory: true)
@@ -43,14 +55,14 @@ public final class LibraryManager: ObservableObject {
 
     public func sortTracks() {
         tracks.sort { (a: Track, b: Track) -> Bool in
-            let artistA = a.displayArtist
-            let artistB = b.displayArtist
-            if artistA != artistB {
-                return Self.compareArtists(artistA, artistB)
+            if a.artistSortKey != b.artistSortKey {
+                return a.artistSortKey < b.artistSortKey
             }
-            let albumCmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
-            if albumCmp != .orderedSame {
-                return albumCmp == .orderedAscending
+            if a.displayArtist != b.displayArtist {
+                return a.displayArtist.localizedCaseInsensitiveCompare(b.displayArtist) == .orderedAscending
+            }
+            if a.albumSortKey != b.albumSortKey {
+                return a.albumSortKey < b.albumSortKey
             }
             if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
                 return (a.discNumber ?? 1) < (b.discNumber ?? 1)
@@ -58,7 +70,7 @@ public final class LibraryManager: ObservableObject {
             if (a.trackNumber ?? 0) != (b.trackNumber ?? 0) {
                 return (a.trackNumber ?? 0) < (b.trackNumber ?? 0)
             }
-            return a.displayTitle.localizedCaseInsensitiveCompare(b.displayTitle) == .orderedAscending
+            return a.titleSortKey < b.titleSortKey
         }
         rebuildIndexes()
     }
@@ -122,8 +134,9 @@ public final class LibraryManager: ObservableObject {
             self.tracks = loaded
             sortTracks()
             PlaylistManager.shared.pruneOrphans(validTrackIds: Set(loaded.map(\.id)))
+            libraryStructureDidChange.send()
             if modified {
-                saveLibrary()
+                saveLibrary(immediate: true)
             }
             return
         }
@@ -189,16 +202,37 @@ public final class LibraryManager: ObservableObject {
         if !imported.isEmpty {
             self.tracks = imported
             sortTracks()
-            saveLibrary()
+            libraryStructureDidChange.send()
+            saveLibrary(immediate: true)
         }
     }
 
-    public func saveLibrary() {
+    public func saveLibrary(immediate: Bool = false) {
+        saveDebounceTask?.cancel()
         let url = Self.libraryURL
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = .prettyPrinted
-        if let data = try? encoder.encode(tracks) {
-            try? data.write(to: url, options: .atomic)
+
+        if immediate {
+            saveDebounceTask = nil
+            let snapshot = tracks
+            saveQueue.async {
+                let encoder = JSONEncoder()
+                if let data = try? encoder.encode(snapshot) {
+                    try? data.write(to: url, options: .atomic)
+                }
+            }
+            return
+        }
+
+        saveDebounceTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self = self else { return }
+            let snapshot = self.tracks
+            self.saveQueue.async {
+                let encoder = JSONEncoder()
+                if let data = try? encoder.encode(snapshot) {
+                    try? data.write(to: url, options: .atomic)
+                }
+            }
         }
     }
 
@@ -211,6 +245,7 @@ public final class LibraryManager: ObservableObject {
 
         if fullRescan {
             LibraryHealthManager.shared.clearAllOverridesAndIgnored()
+            MetadataReader.clearArtworkCache()
         }
 
         let startInstant = ContinuousClock.now
@@ -293,7 +328,8 @@ public final class LibraryManager: ObservableObject {
                 self.tracks = discoveredTracks
                 self.sortTracks()
                 PlaylistManager.shared.pruneOrphans(validTrackIds: Set(discoveredTracks.map(\.id)))
-                self.saveLibrary()
+                self.libraryStructureDidChange.send()
+                self.saveLibrary(immediate: true)
                 self.isSyncing = false
                 self.isFullRescan = false
                 self.syncStatusText = ""
@@ -319,12 +355,16 @@ public final class LibraryManager: ObservableObject {
         }
         self.tracks = updated
         sortTracks()
-        saveLibrary()
+        libraryStructureDidChange.send()
+        saveLibrary(immediate: true)
     }
 
     public func updateTrackDynamicRange(id: String, score: Int, saveImmediately: Bool = true) {
         if let idx = tracks.firstIndex(where: { $0.id == id }) {
             tracks[idx].dynamicRange = score
+            let updated = tracks[idx]
+            syncIndexedTrack(updated)
+            trackMetadataDidUpdate.send([updated])
             if saveImmediately {
                 saveLibrary()
             }
@@ -332,14 +372,17 @@ public final class LibraryManager: ObservableObject {
     }
 
     public func updateTracksDynamicRange(scores: [String: Int]) {
-        var changed = false
+        var updatedTracks: [Track] = []
         for (id, score) in scores {
             if let idx = tracks.firstIndex(where: { $0.id == id }) {
                 tracks[idx].dynamicRange = score
-                changed = true
+                let updated = tracks[idx]
+                syncIndexedTrack(updated)
+                updatedTracks.append(updated)
             }
         }
-        if changed {
+        if !updatedTracks.isEmpty {
+            trackMetadataDidUpdate.send(updatedTracks)
             saveLibrary()
         }
     }
@@ -348,13 +391,54 @@ public final class LibraryManager: ObservableObject {
         if let idx = tracks.firstIndex(where: { $0.id == trackId }) {
             let current = tracks[idx].playCount ?? 0
             tracks[idx].playCount = current + 1
+            let updated = tracks[idx]
+            syncIndexedTrack(updated)
+            trackMetadataDidUpdate.send([updated])
             saveLibrary()
         }
     }
 
+    private func syncIndexedTrack(_ updated: Track) {
+        tracksById[updated.id] = updated
+
+        let artist = updated.displayArtist
+        if var list = tracksByArtistMap[artist],
+           let i = list.firstIndex(where: { $0.id == updated.id }) {
+            list[i] = updated
+            tracksByArtistMap[artist] = list
+        }
+        let albumArtist = updated.displayAlbumArtist
+        if albumArtist != artist,
+           var list = tracksByArtistMap[albumArtist],
+           let i = list.firstIndex(where: { $0.id == updated.id }) {
+            list[i] = updated
+            tracksByArtistMap[albumArtist] = list
+        }
+
+        let album = updated.displayAlbum
+        let key1 = "\(artist)\0\(album)"
+        if var list = tracksByArtistAndAlbumMap[key1],
+           let i = list.firstIndex(where: { $0.id == updated.id }) {
+            list[i] = updated
+            tracksByArtistAndAlbumMap[key1] = list
+        }
+        if albumArtist != artist {
+            let key2 = "\(albumArtist)\0\(album)"
+            if var list = tracksByArtistAndAlbumMap[key2],
+               let i = list.firstIndex(where: { $0.id == updated.id }) {
+                list[i] = updated
+                tracksByArtistAndAlbumMap[key2] = list
+            }
+        }
+    }
+
     public func clearAllData() {
+        saveDebounceTask?.cancel()
+        saveDebounceTask = nil
         tracks.removeAll()
         rebuildIndexes()
+        MetadataReader.clearArtworkCache()
+        libraryStructureDidChange.send()
         let url = Self.libraryURL
         try? FileManager.default.removeItem(at: url)
     }
@@ -362,44 +446,27 @@ public final class LibraryManager: ObservableObject {
     public func removeTrack(id: String) {
         tracks.removeAll { $0.id == id }
         sortTracks()
-        saveLibrary()
+        libraryStructureDidChange.send()
+        saveLibrary(immediate: true)
     }
 
+    public func track(forId id: String) -> Track? {
+        tracksById[id]
+    }
+
+    public func trackCount(for artist: String) -> Int {
+        trackCountByArtistMap[artist] ?? 0
+    }
 
     public func albums(for artist: String) -> [String] {
-        var seen = Set<String>()
-        var result: [String] = []
-        for track in tracks where track.displayArtist == artist || track.displayAlbumArtist == artist {
-            let album = track.displayAlbum
-            if !seen.contains(album) {
-                seen.insert(album)
-                result.append(album)
-            }
-        }
-        return result.sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+        albumsByArtistMap[artist] ?? []
     }
 
     public func tracks(for artist: String, album: String? = nil) -> [Track] {
-        let filtered = tracks.filter { track in
-            let matchArtist = (track.displayArtist == artist || track.displayAlbumArtist == artist)
-            if let alb = album {
-                return matchArtist && track.displayAlbum == alb
-            }
-            return matchArtist
+        if let alb = album {
+            return tracksByArtistAndAlbumMap["\(artist)\0\(alb)"] ?? []
         }
-        return filtered.sorted { a, b in
-            let albumCmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
-            if albumCmp != .orderedSame {
-                return albumCmp == .orderedAscending
-            }
-            if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
-                return (a.discNumber ?? 1) < (b.discNumber ?? 1)
-            }
-            if (a.trackNumber ?? 0) != (b.trackNumber ?? 0) {
-                return (a.trackNumber ?? 0) < (b.trackNumber ?? 0)
-            }
-            return a.displayTitle.localizedCaseInsensitiveCompare(b.displayTitle) == .orderedAscending
-        }
+        return tracksByArtistMap[artist] ?? []
     }
 
     public struct AlbumInfo: Identifiable, Hashable, Sendable {
@@ -412,23 +479,84 @@ public final class LibraryManager: ObservableObject {
     }
 
     public func rebuildIndexes() {
+        var byId: [String: Track] = [:]
+        byId.reserveCapacity(tracks.count)
+
         var seenArtists = Set<String>()
         var artistsList: [String] = []
         var albumDict: [String: [Track]] = [:]
 
+        var artistAlbumsSet: [String: Set<String>] = [:]
+        var artistTracks: [String: [Track]] = [:]
+        var artistAlbumTracks: [String: [Track]] = [:]
+
         for track in tracks {
+            byId[track.id] = track
+
             let artist = track.displayArtist
             if !seenArtists.contains(artist) && UUID(uuidString: artist) == nil {
                 seenArtists.insert(artist)
                 artistsList.append(artist)
             }
-            let key = "\(track.displayAlbum)___\(track.displayAlbumArtist)"
+
+            let album = track.displayAlbum
+            let albumArtist = track.displayAlbumArtist
+            let key = "\(album)___\(albumArtist)"
             albumDict[key, default: []].append(track)
+
+            artistAlbumsSet[artist, default: []].insert(album)
+            artistTracks[artist, default: []].append(track)
+            artistAlbumTracks["\(artist)\0\(album)", default: []].append(track)
+
+            if albumArtist != artist {
+                artistAlbumsSet[albumArtist, default: []].insert(album)
+                artistTracks[albumArtist, default: []].append(track)
+                artistAlbumTracks["\(albumArtist)\0\(album)", default: []].append(track)
+            }
         }
 
+        self.tracksById = byId
         self.uniqueArtists = artistsList.sorted { Self.compareArtists($0, $1) }
 
+        var sortedAlbumsByArtist: [String: [String]] = [:]
+        sortedAlbumsByArtist.reserveCapacity(artistAlbumsSet.count)
+        for (artist, albumSet) in artistAlbumsSet {
+            sortedAlbumsByArtist[artist] = albumSet.sorted {
+                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+            }
+        }
+        self.albumsByArtistMap = sortedAlbumsByArtist
+
+        let trackSort: (Track, Track) -> Bool = { a, b in
+            if a.displayAlbum != b.displayAlbum {
+                let cmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
+                if cmp != .orderedSame { return cmp == .orderedAscending }
+            }
+            if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
+                return (a.discNumber ?? 1) < (b.discNumber ?? 1)
+            }
+            if (a.trackNumber ?? 0) != (b.trackNumber ?? 0) {
+                return (a.trackNumber ?? 0) < (b.trackNumber ?? 0)
+            }
+            return a.titleSortKey < b.titleSortKey
+        }
+
+        var counts: [String: Int] = [:]
+        counts.reserveCapacity(artistTracks.count)
+        for (artist, list) in artistTracks {
+            counts[artist] = list.count
+            artistTracks[artist] = list.sorted(by: trackSort)
+        }
+        self.trackCountByArtistMap = counts
+        self.tracksByArtistMap = artistTracks
+
+        for (key, list) in artistAlbumTracks {
+            artistAlbumTracks[key] = list.sorted(by: trackSort)
+        }
+        self.tracksByArtistAndAlbumMap = artistAlbumTracks
+
         var albumList: [AlbumInfo] = []
+        albumList.reserveCapacity(albumDict.count)
         for (_, trackList) in albumDict {
             guard let first = trackList.first else { continue }
             let title = first.displayAlbum
@@ -445,9 +573,8 @@ public final class LibraryManager: ObservableObject {
         }
 
         self.allAlbums = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
-            let cmp = Self.compareArtists(a.artist, b.artist)
             if a.artist != b.artist {
-                return cmp
+                return Self.compareArtists(a.artist, b.artist)
             }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }

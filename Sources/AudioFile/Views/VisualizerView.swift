@@ -20,7 +20,7 @@ public struct VisualizerView: View {
             .clipped()
             .background {
                 if let track = audio.currentTrack {
-                    ArtworkView(track: track, cornerRadius: 0, shadowRadius: 0)
+                    ArtworkView(track: track, cornerRadius: 0, shadowRadius: 0, maxPixelSize: 320)
                         .blur(radius: 70)
                         .opacity(0.28)
                         .ignoresSafeArea()
@@ -488,7 +488,7 @@ private struct VisualizerHeaderView: View {
                 vm.inspectingArtworkTrack = track
             } label: {
                 ZStack(alignment: .bottomTrailing) {
-                    ArtworkView(track: track, cornerRadius: artworkSize > 160 ? 14 : 10, shadowRadius: artworkSize > 160 ? 10 : 6)
+                    ArtworkView(track: track, cornerRadius: artworkSize > 160 ? 14 : 10, shadowRadius: artworkSize > 160 ? 10 : 6, maxPixelSize: artworkSize > 200 ? nil : 320)
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -554,7 +554,7 @@ private struct VisualizerSideInfoView: View {
                 vm.inspectingArtworkTrack = track
             } label: {
                 ZStack(alignment: .bottomTrailing) {
-                    ArtworkView(track: track, cornerRadius: artworkSize > 360 ? 18 : 16, shadowRadius: artworkSize > 360 ? 16 : 12)
+                    ArtworkView(track: track, cornerRadius: artworkSize > 360 ? 18 : 16, shadowRadius: artworkSize > 360 ? 16 : 12, maxPixelSize: artworkSize > 200 ? nil : 320)
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
@@ -629,7 +629,7 @@ private struct VisualizerSoloHeroView: View {
                 vm.inspectingArtworkTrack = track
             } label: {
                 ZStack(alignment: .bottomTrailing) {
-                    ArtworkView(track: track, cornerRadius: cornerRad, shadowRadius: artworkSize > 450 ? 24 : 16)
+                    ArtworkView(track: track, cornerRadius: cornerRad, shadowRadius: artworkSize > 450 ? 24 : 16, maxPixelSize: artworkSize > 200 ? nil : 320)
                         .frame(width: artworkSize, height: artworkSize)
 
                     Image(systemName: "arrow.up.left.and.arrow.down.right")

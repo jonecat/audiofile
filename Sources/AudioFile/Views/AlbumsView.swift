@@ -12,7 +12,7 @@ public struct AlbumsView: View {
             LazyVGrid(columns: columns, spacing: 24) {
                 ForEach(filteredAlbums) { album in
                     VStack(alignment: .leading, spacing: 8) {
-                        ArtworkView(track: album.sampleTrack, cornerRadius: 8, shadowRadius: 4)
+                        ArtworkView(track: album.sampleTrack, cornerRadius: 8, shadowRadius: 4, maxPixelSize: 320)
                             .aspectRatio(1, contentMode: .fit)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
@@ -62,7 +62,7 @@ public struct AlbumsView: View {
             VStack(spacing: 0) {
                 // Header with Album Art & Details
                 HStack(alignment: .top, spacing: 20) {
-                    ArtworkView(track: album.sampleTrack, cornerRadius: 10, shadowRadius: 6)
+                    ArtworkView(track: album.sampleTrack, cornerRadius: 10, shadowRadius: 6, maxPixelSize: 320)
                         .frame(width: 120, height: 120)
 
                     VStack(alignment: .leading, spacing: 6) {

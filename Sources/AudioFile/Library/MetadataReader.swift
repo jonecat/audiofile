@@ -1,8 +1,78 @@
 import Foundation
 import AVFoundation
 import AppKit
+import ImageIO
+
+private struct SendableImage: @unchecked Sendable {
+    let image: NSImage
+}
+
+private final class ArtworkCache: @unchecked Sendable {
+    static let shared = ArtworkCache()
+
+    private let lock = NSLock()
+    private let imageCache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 600
+        return cache
+    }()
+    private var negativeTrackIds = Set<String>()
+    private var folderCoverURLs: [String: URL?] = [:]
+
+    func image(forKey key: String) -> NSImage? {
+        imageCache.object(forKey: key as NSString)
+    }
+
+    func setImage(_ image: NSImage, forKey key: String) {
+        imageCache.setObject(image, forKey: key as NSString)
+    }
+
+    func isNegative(trackId: String) -> Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return negativeTrackIds.contains(trackId)
+    }
+
+    func markNegative(trackId: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        if negativeTrackIds.count > 5000 {
+            negativeTrackIds.removeAll()
+        }
+        negativeTrackIds.insert(trackId)
+    }
+
+    func cachedFolderCoverURL(for folderPath: String) -> URL?? {
+        lock.lock()
+        defer { lock.unlock() }
+        return folderCoverURLs[folderPath]
+    }
+
+    func setFolderCoverURL(_ url: URL?, for folderPath: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        folderCoverURLs.updateValue(url, forKey: folderPath)
+    }
+
+    func clear() {
+        imageCache.removeAllObjects()
+        lock.lock()
+        negativeTrackIds.removeAll()
+        folderCoverURLs.removeAll()
+        lock.unlock()
+    }
+}
 
 public struct MetadataReader: Sendable {
+    private static let discTrackFilenameRegex = try! NSRegularExpression(pattern: #"^(\d{1,2})-(\d{1,3})(?:[\s.\-_]+)"#)
+    private static let trackFilenameRegex = try! NSRegularExpression(pattern: #"^(\d{1,3})(?:[\s.\-_]+)"#)
+    private static let folderArtworkNames = [
+        "cover.jpg", "cover.png", "cover.jpeg",
+        "folder.jpg", "folder.png",
+        "front.jpg", "front.png",
+        "album.jpg", "album.png"
+    ]
+
     public static let supportedExtensions: Set<String> = [
         "flac", "alac", "wav", "wave", "aiff", "aif", "m4a", "aac", "mp3", "caf",
         "ape", "dsf", "dff", "dsd"
@@ -216,63 +286,167 @@ public struct MetadataReader: Sendable {
         )
     }
 
-    public static func loadArtwork(for track: Track) async -> NSImage? {
-        // 0. If this is an optical disc track, load the disc artwork
-        if track.id.hasPrefix("optical_") || track.format == "CDDA" {
-            let discArt = await MainActor.run {
-                if let data = OpticalDiscManager.shared.detectedDisc?.artworkData {
-                    return NSImage(data: data)
-                }
-                return nil
-            }
-            if let discArt = discArt {
-                return discArt
-            }
+    public static func clearArtworkCache() {
+        ArtworkCache.shared.clear()
+    }
+
+    public static func isArtworkKnownMissing(for track: Track) -> Bool {
+        ArtworkCache.shared.isNegative(trackId: track.id)
+    }
+
+    public static func cachedArtwork(for track: Track, maxPixelSize: Int? = 128) -> NSImage? {
+        let cache = ArtworkCache.shared
+        if cache.isNegative(trackId: track.id) {
+            return nil
         }
 
-        let parentDir = track.path.deletingLastPathComponent()
-
-        // 1. Check folder artwork first (often higher resolution and faster to load)
-        let commonNames = ["cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png"]
-        for name in commonNames {
-            let artURL = parentDir.appendingPathComponent(name)
-            if FileManager.default.fileExists(atPath: artURL.path),
-               let image = NSImage(contentsOf: artURL) {
-                return image
-            }
+        let sizeTag = maxPixelSize.map { String($0) } ?? "full"
+        if let img = cache.image(forKey: "trk|\(track.id)|\(sizeTag)") {
+            return img
         }
 
-        // 2. Read embedded artwork from APEv2 / DSF / DFF custom parser if applicable
-        if OpenSourceDecoders.requiresCustomDecoder(track.path) {
-            let decodedMeta = OpenSourceDecoders.readMetadata(for: track.path)
-            if let imgData = decodedMeta.embeddedArtwork, let img = NSImage(data: imgData) {
-                return img
-            }
-        }
-
-        // 3. Read embedded artwork from AVURLAsset
-        let asset = AVURLAsset(url: track.path)
-        if let metadata = try? await asset.load(.metadata) {
-            for item in metadata {
-                if item.commonKey == .commonKeyArtwork || (item.key?.description ?? "").uppercased().contains("ARTWORK") {
-                    if let data = try? await item.load(.dataValue), let img = NSImage(data: data) {
-                        return img
-                    }
-                }
-            }
+        let folderPath = track.path.deletingLastPathComponent().standardizedFileURL.path
+        if let img = cache.image(forKey: "dir|\(folderPath)|\(sizeTag)") {
+            return img
         }
 
         return nil
     }
 
-    public static func hasFolderArtwork(in dir: URL) -> Bool {
-        let commonNames = ["cover.jpg", "cover.png", "cover.jpeg", "folder.jpg", "folder.png", "front.jpg", "front.png", "album.jpg", "album.png"]
-        for name in commonNames {
-            if FileManager.default.fileExists(atPath: dir.appendingPathComponent(name).path) {
-                return true
+    public static func loadArtwork(for track: Track, maxPixelSize: Int? = nil) async -> NSImage? {
+        if let cached = cachedArtwork(for: track, maxPixelSize: maxPixelSize) {
+            return cached
+        }
+        if ArtworkCache.shared.isNegative(trackId: track.id) {
+            return nil
+        }
+
+        let sizeTag = maxPixelSize.map { String($0) } ?? "full"
+
+        // 0. If this is an optical disc track, load the disc artwork
+        if track.id.hasPrefix("optical_") || track.format == "CDDA" {
+            let discArtData = await MainActor.run {
+                OpticalDiscManager.shared.detectedDisc?.artworkData
+            }
+            if let data = discArtData {
+                let boxed = await Task.detached(priority: .utility) { () -> SendableImage? in
+                    guard let img = decodeImage(from: data, maxPixelSize: maxPixelSize) else {
+                        return nil
+                    }
+                    ArtworkCache.shared.setImage(img, forKey: "trk|\(track.id)|\(sizeTag)")
+                    return SendableImage(image: img)
+                }.value
+                if let img = boxed?.image {
+                    return img
+                }
             }
         }
-        return false
+
+        let parentDir = track.path.deletingLastPathComponent()
+        let folderPath = parentDir.standardizedFileURL.path
+        let isOptical = track.id.hasPrefix("optical_") || track.format == "CDDA"
+
+        let boxed = await Task.detached(priority: .utility) { () -> SendableImage? in
+            let cache = ArtworkCache.shared
+
+            // 1. Check folder artwork first (cached folder lookup, faster and higher resolution)
+            if let artURL = findFolderArtworkURL(in: parentDir),
+               let img = decodeImage(at: artURL, maxPixelSize: maxPixelSize) {
+                cache.setImage(img, forKey: "dir|\(folderPath)|\(sizeTag)")
+                cache.setImage(img, forKey: "trk|\(track.id)|\(sizeTag)")
+                return SendableImage(image: img)
+            }
+
+            if !track.hasCoverArt && !isOptical {
+                cache.markNegative(trackId: track.id)
+                return nil
+            }
+
+            // 2. Read embedded artwork from APEv2 / DSF / DFF custom parser if applicable
+            if OpenSourceDecoders.requiresCustomDecoder(track.path) {
+                let decodedMeta = OpenSourceDecoders.readMetadata(for: track.path)
+                if let imgData = decodedMeta.embeddedArtwork,
+                   let img = decodeImage(from: imgData, maxPixelSize: maxPixelSize) {
+                    cache.setImage(img, forKey: "trk|\(track.id)|\(sizeTag)")
+                    return SendableImage(image: img)
+                }
+            }
+
+            // 3. Read embedded artwork from AVURLAsset
+            let asset = AVURLAsset(url: track.path)
+            if let metadata = try? await asset.load(.metadata) {
+                for item in metadata {
+                    if item.commonKey == .commonKeyArtwork || (item.key?.description ?? "").uppercased().contains("ARTWORK") {
+                        if let data = try? await item.load(.dataValue),
+                           let img = decodeImage(from: data, maxPixelSize: maxPixelSize) {
+                            cache.setImage(img, forKey: "trk|\(track.id)|\(sizeTag)")
+                            return SendableImage(image: img)
+                        }
+                    }
+                }
+            }
+
+            cache.markNegative(trackId: track.id)
+            return nil
+        }.value
+
+        return boxed?.image
+    }
+
+    public static func hasFolderArtwork(in dir: URL) -> Bool {
+        findFolderArtworkURL(in: dir) != nil
+    }
+
+    private static func findFolderArtworkURL(in dir: URL) -> URL? {
+        let folderPath = dir.standardizedFileURL.path
+        if let cached = ArtworkCache.shared.cachedFolderCoverURL(for: folderPath) {
+            return cached
+        }
+
+        let fm = FileManager.default
+        var found: URL? = nil
+        for name in folderArtworkNames {
+            let candidate = dir.appendingPathComponent(name)
+            if fm.fileExists(atPath: candidate.path) {
+                found = candidate
+                break
+            }
+        }
+        ArtworkCache.shared.setFolderCoverURL(found, for: folderPath)
+        return found
+    }
+
+    private static func decodeImage(at url: URL, maxPixelSize: Int?) -> NSImage? {
+        guard let maxPx = maxPixelSize else {
+            return NSImage(contentsOf: url)
+        }
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            return NSImage(contentsOf: url)
+        }
+        return createThumbnail(from: source, maxPixelSize: maxPx) ?? NSImage(contentsOf: url)
+    }
+
+    private static func decodeImage(from data: Data, maxPixelSize: Int?) -> NSImage? {
+        guard let maxPx = maxPixelSize else {
+            return NSImage(data: data)
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
+            return NSImage(data: data)
+        }
+        return createThumbnail(from: source, maxPixelSize: maxPx) ?? NSImage(data: data)
+    }
+
+    private static func createThumbnail(from source: CGImageSource, maxPixelSize: Int) -> NSImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
     private static func formatDisplayName(for ext: String) -> String {
@@ -336,9 +510,10 @@ public struct MetadataReader: Sendable {
         let name = url.deletingPathExtension().lastPathComponent.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return (nil, nil) }
 
+        let range = NSRange(name.startIndex..., in: name)
+
         // Match "1-03 Title" or "1-03. Title"
-        if let regex = try? NSRegularExpression(pattern: #"^(\d{1,2})-(\d{1,3})(?:[\s.\-_]+)"#),
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+        if let match = discTrackFilenameRegex.firstMatch(in: name, range: range),
            let discRange = Range(match.range(at: 1), in: name),
            let trackRange = Range(match.range(at: 2), in: name),
            let disc = Int(name[discRange]),
@@ -348,8 +523,7 @@ public struct MetadataReader: Sendable {
         }
 
         // Match "03 Title", "03 - Title", "03. Title" (1 to 3 digits so 4-digit years aren't matched)
-        if let regex = try? NSRegularExpression(pattern: #"^(\d{1,3})(?:[\s.\-_]+)"#),
-           let match = regex.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)),
+        if let match = trackFilenameRegex.firstMatch(in: name, range: range),
            let trackRange = Range(match.range(at: 1), in: name),
            let track = Int(name[trackRange]),
            track > 0 {

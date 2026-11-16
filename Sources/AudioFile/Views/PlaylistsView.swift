@@ -136,7 +136,7 @@ public struct PlaylistsView: View {
                                 .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
                                 .frame(width: 24, alignment: .trailing)
 
-                            ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0)
+                            ArtworkView(track: track, cornerRadius: 4, shadowRadius: 0, maxPixelSize: 64)
                                 .frame(width: 32, height: 32)
 
                             VStack(alignment: .leading, spacing: 2) {
@@ -283,15 +283,14 @@ public struct PlaylistsView: View {
     }
 
     private var currentTracks: [Track] {
-        let trackMap = Dictionary(uniqueKeysWithValues: vm.library.tracks.map { ($0.id, $0) })
         switch section {
         case .favorites:
             return vm.favoriteTracks
         case .recentlyPlayed:
-            return vm.playlists.recentlyPlayed.compactMap { trackMap[$0] }
+            return vm.playlists.recentlyPlayed.compactMap { vm.library.track(forId: $0) }
         case .playlist(let id):
             guard let playlist = vm.playlists.playlists.first(where: { $0.id == id }) else { return [] }
-            return playlist.trackIds.compactMap { trackMap[$0] }
+            return playlist.trackIds.compactMap { vm.library.track(forId: $0) }
         default:
             return []
         }
