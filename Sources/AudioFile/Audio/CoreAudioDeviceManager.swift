@@ -202,6 +202,19 @@ public enum CoreAudioDeviceManager {
             &newRate
         )
         if status == noErr {
+            // Await hardware clock PLL lock and CoreAudio audio server driver settling,
+            // preventing dropped initial audio buffers and mid-playback engine restarts.
+            let t0 = CFAbsoluteTimeGetCurrent()
+            var actual: Float64 = 0
+            var s = UInt32(MemoryLayout<Float64>.size)
+            while (CFAbsoluteTimeGetCurrent() - t0) < 0.4 {
+                if AudioObjectGetPropertyData(deviceID, &addr, 0, nil, &s, &actual) == noErr,
+                   abs(Double(actual) - bestRate) < 1.0 {
+                    break
+                }
+                usleep(5000)
+            }
+            usleep(25000)
             return bestRate
         }
         return current

@@ -261,9 +261,9 @@ public final class AudioEngine: ObservableObject {
         defer { isRebuildingGraph = false }
 
         let targetFormat = format ?? audioFile?.processingFormat
-        let wasRunning = engine.isRunning
+        let shouldRun = engine.isRunning || state == .playing
         playerNode.stop()
-        if wasRunning {
+        if engine.isRunning {
             engine.stop()
         }
         mixerNode.removeTap(onBus: 0)
@@ -276,7 +276,7 @@ public final class AudioEngine: ObservableObject {
         mixerNode.installTap(onBus: 0, bufferSize: 512, format: nil, block: Self.makeTapBlock())
         engine.prepare()
 
-        if wasRunning {
+        if shouldRun {
             try? engine.start()
         }
     }
@@ -291,9 +291,16 @@ public final class AudioEngine: ObservableObject {
             rebuildGraphForHardwareFormatChange(format: nil)
             return
         }
+
         let wasPlaying = (state == .playing)
         let resumePosition = currentTime
-        rebuildGraphForHardwareFormatChange(format: file.processingFormat)
+
+        if file.processingFormat != currentGraphFormat {
+            rebuildGraphForHardwareFormatChange(format: file.processingFormat)
+        } else if !engine.isRunning {
+            try? engine.start()
+        }
+
         if wasPlaying {
             seek(to: resumePosition, startPlaying: true)
         }
@@ -508,22 +515,20 @@ public final class AudioEngine: ObservableObject {
 
             // Auto switch hardware DAC sample rate to match source file if enabled,
             // and ensure graph node format matches file.processingFormat
-            var needsGraphRebuild = (file.processingFormat != currentGraphFormat)
+            let previousHwRate = hardwareSampleRate
+            var newHwRate = previousHwRate
             if currentConfig.autoSampleRateSwitching,
                fileSampleRate > 0,
                let dev = activeOutputDevice ?? CoreAudioDeviceManager.resolveDevice(uid: currentConfig.selectedOutputDeviceUID) {
                 activeOutputDevice = dev
-                let newRate = CoreAudioDeviceManager.switchSampleRateIfSupported(fileSampleRate, on: dev.deviceID)
-                if abs(newRate - hardwareSampleRate) >= 1.0 {
-                    hardwareSampleRate = newRate
-                    needsGraphRebuild = true
-                } else {
-                    hardwareSampleRate = newRate
-                }
+                newHwRate = CoreAudioDeviceManager.switchSampleRateIfSupported(fileSampleRate, on: dev.deviceID)
+                hardwareSampleRate = newHwRate
             } else if let dev = activeOutputDevice {
                 hardwareSampleRate = CoreAudioDeviceManager.nominalSampleRate(for: dev.deviceID) ?? dev.nominalSampleRate
+                newHwRate = hardwareSampleRate
             }
 
+            let needsGraphRebuild = (file.processingFormat != currentGraphFormat) || (abs(newHwRate - previousHwRate) >= 1.0)
             if needsGraphRebuild {
                 rebuildGraphForHardwareFormatChange(format: file.processingFormat)
             }
