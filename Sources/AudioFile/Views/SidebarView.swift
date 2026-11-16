@@ -178,11 +178,14 @@ public struct SidebarView: View {
                             vm.showingNewPlaylistDialog = true
                         } label: {
                             Image(systemName: "plus")
-                                .font(.system(size: 11))
+                                .font(.system(size: 11, weight: .semibold))
+                                .frame(width: 18, height: 18)
+                                .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help("Create New Playlist")
                     }
+                    .padding(.trailing, 10)
                 }
             }
             .listStyle(.sidebar)
