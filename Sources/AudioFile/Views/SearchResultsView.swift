@@ -481,8 +481,9 @@ public struct SearchResultsView: View {
                                 .foregroundColor(.secondary)
                                 .lineLimit(1)
                         }
+                        .layoutPriority(1)
 
-                        Spacer()
+                        Spacer(minLength: 4)
 
                         HStack(spacing: 3) {
                             Image(systemName: "play.fill")
@@ -500,10 +501,14 @@ public struct SearchResultsView: View {
                         FormatBadgeView(format: track.format, isLossless: track.isLossless)
 
                         if !track.qualityColumnText.isEmpty {
-                            Text(track.qualityColumnText)
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(minWidth: 110, alignment: .trailing)
+                            ViewThatFits(in: .horizontal) {
+                                Text(track.qualityColumnText)
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+
+                                EmptyView()
+                            }
                         }
 
                         Text(track.formattedDuration)

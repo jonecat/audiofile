@@ -14,6 +14,8 @@ public struct FormatBadgeView: View {
     public var body: some View {
         Text(format.uppercased())
             .font(.system(size: 9, weight: .bold, design: .monospaced))
+            .lineLimit(1)
+            .fixedSize(horizontal: true, vertical: false)
             .foregroundStyle(isHighlighted ? Color.white : Color.primary.opacity(0.9))
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
@@ -21,6 +23,7 @@ public struct FormatBadgeView: View {
                 isHighlighted ? .clear : .regular,
                 in: .capsule
             )
+            .fixedSize(horizontal: true, vertical: false)
             .help(tooltipText)
     }
 

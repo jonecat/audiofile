@@ -31,19 +31,23 @@ public struct DynamicRangeBadgeView: View {
     }
 
     public var body: some View {
-        if onAction != nil, case .calculating = state {
-            content
-                .help(tooltipText)
-        } else if let action = onAction {
-            Button(action: action) {
+        Group {
+            if onAction != nil, case .calculating = state {
                 content
-            }
-            .buttonStyle(.plain)
-            .help(tooltipText)
-        } else {
-            content
+                    .help(tooltipText)
+            } else if let action = onAction {
+                Button(action: action) {
+                    content
+                }
+                .buttonStyle(.plain)
                 .help(tooltipText)
+            } else {
+                content
+                    .help(tooltipText)
+            }
         }
+        .lineLimit(1)
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     @ViewBuilder

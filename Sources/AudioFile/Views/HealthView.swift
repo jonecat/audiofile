@@ -105,8 +105,8 @@ public struct HealthView: View {
                     Spacer()
                 }
 
-                // Category Cards Row
-                HStack(spacing: 12) {
+                // Category Cards Grid
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 140, maximum: 220), spacing: 12)], spacing: 12) {
                     ForEach(HealthIssueCategory.allCases) { category in
                         let count = health.issues(for: category).count
                         let isSelected = (health.selectedCategory == category)

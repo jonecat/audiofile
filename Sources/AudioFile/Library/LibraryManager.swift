@@ -8,6 +8,7 @@ public final class LibraryManager: ObservableObject {
     @Published public private(set) var tracks: [Track] = []
     @Published public private(set) var uniqueArtists: [String] = []
     @Published public private(set) var allAlbums: [AlbumInfo] = []
+    @Published public private(set) var allAlbumsByTitle: [AlbumInfo] = []
     @Published public private(set) var isSyncing: Bool = false
     @Published public private(set) var isFullRescan: Bool = false
     @Published public private(set) var syncStatusText: String = ""
@@ -577,6 +578,14 @@ public final class LibraryManager: ObservableObject {
                 return Self.compareArtists(a.artist, b.artist)
             }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
+        }
+
+        self.allAlbumsByTitle = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
+            let titleCmp = a.title.localizedCaseInsensitiveCompare(b.title)
+            if titleCmp != .orderedSame {
+                return titleCmp == .orderedAscending
+            }
+            return Self.compareArtists(a.artist, b.artist)
         }
     }
 }

@@ -34,7 +34,7 @@ public struct MainSplitView: View {
                     }
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // Floating Liquid Glass Bottom Player Deck
                 PlayerBarView(vm: vm)
@@ -55,34 +55,15 @@ public struct MainSplitView: View {
                 }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.currentToast)
+            .navigationSplitViewColumnWidth(min: 500, ideal: 820)
         }
         .searchable(text: $vm.searchQuery, prompt: "Search artists, albums, songs, playlists…")
-        .toolbar {
-            ToolbarItemGroup(placement: .automatic) {
-                Button {
-                    vm.toggleLibraryShuffle()
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: vm.isLibraryShuffleActive ? "stop.fill" : "shuffle")
-                        Text(vm.isLibraryShuffleActive ? "Stop Shuffle" : "Shuffle Library")
-                    }
-                    .font(.system(size: 12, weight: vm.isLibraryShuffleActive ? .semibold : .medium))
-                    .foregroundStyle(vm.isLibraryShuffleActive ? Color.accentColor : Color.primary)
-                    .padding(.horizontal, 4)
-                }
-                .disabled(vm.library.tracks.isEmpty && !vm.isLibraryShuffleActive)
-                .help(vm.isLibraryShuffleActive ? "Stop Continuous Library Shuffle" : "Continuously Shuffle Entire Library")
-            }
-        }
         .sheet(isPresented: $vm.showingSettings) {
             SettingsView(vm: vm)
         }
-        .sheet(item: $vm.selectedAlbumDetail) { album in
-            AlbumDetailSheetView(vm: vm, album: album)
-        }
         .sheet(
             isPresented: Binding(
-                get: { vm.inspectingTrack != nil && vm.selectedAlbumDetail == nil },
+                get: { vm.inspectingTrack != nil },
                 set: { if !$0 { vm.inspectingTrack = nil } }
             )
         ) {

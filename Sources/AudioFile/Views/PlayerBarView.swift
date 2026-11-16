@@ -5,11 +5,11 @@ public struct PlayerBarView: View {
     @ObservedObject var audio = AudioEngine.shared
 
     public var body: some View {
-        HStack(spacing: 16) {
+        HStack(spacing: 12) {
             // Track Artwork & Info (isolated from 20Hz playback updates so tooltips never flicker or cancel)
             PlayerBarTrackInfoView(vm: vm, track: audio.currentTrack)
 
-            Spacer()
+            Spacer(minLength: 6)
 
             // Center Controls & Scrubber
             VStack(spacing: 6) {
@@ -110,8 +110,9 @@ public struct PlayerBarView: View {
                 // Scrubber Bar & Times
                 PlayerBarScrubberView(vm: vm, audio: audio)
             }
+            .layoutPriority(1)
 
-            Spacer()
+            Spacer(minLength: 6)
 
             // Right Actions: Volume
             GlassEffectContainer(spacing: 8) {
@@ -139,9 +140,9 @@ public struct PlayerBarView: View {
                 .padding(.vertical, 5)
                 .glassEffect(.clear, in: .capsule)
             }
-            .frame(width: 230, alignment: .trailing)
+            .fixedSize(horizontal: true, vertical: false)
         }
-        .padding(.horizontal, 18)
+        .padding(.horizontal, 14)
         .padding(.vertical, 10)
         .glassEffect(.regular, in: .rect(cornerRadius: 20))
         .padding(.horizontal, 12)
@@ -157,7 +158,7 @@ private struct PlayerBarTrackInfoView: View {
     let track: Track?
 
     var body: some View {
-        HStack(spacing: 14) {
+        HStack(spacing: 10) {
             Button {
                 vm.selectedSection = .visualizer
             } label: {
@@ -178,16 +179,25 @@ private struct PlayerBarTrackInfoView: View {
                         .foregroundColor(.secondary)
                         .lineLimit(1)
 
-                    HStack(spacing: 6) {
-                        DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
-                            vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 6) {
+                            DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
+                                vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                            }
+                            FormatBadgeView(format: t.format, isLossless: t.isLossless)
+                            if let shortQuality = t.shortQualityDescription {
+                                Text(shortQuality)
+                                    .font(.system(size: 9, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
-                        FormatBadgeView(format: t.format, isLossless: t.isLossless)
-                        if let shortQuality = t.shortQualityDescription {
-                            Text(shortQuality)
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .lineLimit(1)
+
+                        HStack(spacing: 6) {
+                            DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
+                                vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                            }
+                            FormatBadgeView(format: t.format, isLossless: t.isLossless)
                         }
                     }
                 } else {
@@ -197,9 +207,10 @@ private struct PlayerBarTrackInfoView: View {
                     Text("Select a song to start listening")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary.opacity(0.7))
+                        .lineLimit(1)
                 }
             }
-            .frame(minWidth: 180, maxWidth: 240, alignment: .leading)
+            .frame(minWidth: 80, idealWidth: 170, maxWidth: 220, alignment: .leading)
 
             if let t = track {
                 Button {
@@ -247,7 +258,7 @@ private struct PlayerBarScrubberView: View {
             ) { seekTime in
                 audio.seek(to: seekTime)
             }
-            .frame(maxWidth: 420)
+            .frame(minWidth: 90, idealWidth: 280, maxWidth: 420)
             .help("Click to seek in track")
 
             Text("-" + formatDuration(max(0, audio.duration - audio.currentTime)))

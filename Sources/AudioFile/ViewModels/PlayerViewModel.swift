@@ -47,6 +47,13 @@ public enum SearchCategoryFilter: String, CaseIterable, Identifiable, Sendable {
     public var id: String { rawValue }
 }
 
+public enum AlbumSortMode: String, CaseIterable, Identifiable, Sendable {
+    case artist = "Artist"
+    case album = "Album"
+
+    public var id: String { rawValue }
+}
+
 @MainActor
 public final class PlayerViewModel: ObservableObject {
     public static let shared = PlayerViewModel()
@@ -56,6 +63,16 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var isSearchPresented: Bool = false
     @Published public var searchCategoryFilter: SearchCategoryFilter = .all
     @Published public var searchShowAllArtists: Bool = false
+    @Published public var albumSortMode: AlbumSortMode = .artist
+
+    public var sortedAlbums: [LibraryManager.AlbumInfo] {
+        switch albumSortMode {
+        case .artist:
+            return library.allAlbums
+        case .album:
+            return library.allAlbumsByTitle
+        }
+    }
 
     public var isSearching: Bool {
         !searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -70,6 +87,7 @@ public final class PlayerViewModel: ObservableObject {
                     if !self.searchQuery.isEmpty {
                         self.searchQuery = ""
                         self.searchCategoryFilter = .all
+                        self.searchShowAllArtists = false
                         self.updateFilteredTracks()
                     }
                 }
@@ -898,6 +916,11 @@ public final class PlayerViewModel: ObservableObject {
 
     public func openAlbumFromSearch(_ album: LibraryManager.AlbumInfo) {
         selectedAlbumDetail = album
+        selectedSection = .albums
+        searchQuery = ""
+        searchCategoryFilter = .all
+        searchShowAllArtists = false
+        updateFilteredTracks()
     }
 
     public func openPlaylistFromSearch(_ playlist: Playlist) {
