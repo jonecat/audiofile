@@ -9,6 +9,7 @@ public final class LibraryManager: ObservableObject {
     @Published public private(set) var uniqueArtists: [String] = []
     @Published public private(set) var allAlbums: [AlbumInfo] = []
     @Published public private(set) var allAlbumsByTitle: [AlbumInfo] = []
+    @Published public private(set) var allAlbumsByYear: [AlbumInfo] = []
     @Published public private(set) var isSyncing: Bool = false
     @Published public private(set) var isFullRescan: Bool = false
     @Published public private(set) var syncStatusText: String = ""
@@ -674,6 +675,27 @@ public final class LibraryManager: ObservableObject {
                 return titleCmp == .orderedAscending
             }
             return Self.compareArtists(a.artist, b.artist)
+        }
+
+        self.allAlbumsByYear = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
+            let yearA = (a.year != nil && a.year! > 0) ? a.year : nil
+            let yearB = (b.year != nil && b.year! > 0) ? b.year : nil
+            switch (yearA, yearB) {
+            case let (yA?, yB?):
+                if yA != yB {
+                    return yA < yB
+                }
+            case (.some, .none):
+                return true
+            case (.none, .some):
+                return false
+            case (.none, .none):
+                break
+            }
+            if a.artist != b.artist {
+                return Self.compareArtists(a.artist, b.artist)
+            }
+            return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
     }
 }

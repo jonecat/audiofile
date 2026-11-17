@@ -52,6 +52,7 @@ public enum SearchCategoryFilter: String, CaseIterable, Identifiable, Sendable {
 public enum AlbumSortMode: String, CaseIterable, Identifiable, Sendable {
     case artist = "Artist"
     case album = "Album"
+    case year = "Year"
 
     public var id: String { rawValue }
 }
@@ -73,6 +74,8 @@ public final class PlayerViewModel: ObservableObject {
             return library.allAlbums
         case .album:
             return library.allAlbumsByTitle
+        case .year:
+            return library.allAlbumsByYear
         }
     }
 
