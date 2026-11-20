@@ -151,6 +151,7 @@ public struct AlbumDetailView: View {
         GeometryReader { geometry in
             let w = geometry.size.width
             let h = geometry.size.height
+            let isTallPortrait = (h > w * 1.1 && h >= 680)
 
             VStack(spacing: 0) {
                 // Top-left Back to Albums button bar
@@ -175,11 +176,45 @@ public struct AlbumDetailView: View {
 
                     Spacer()
                 }
-                .padding(.horizontal, w < 700 ? 20 : 28)
+                .padding(.horizontal, w < 700 ? 20 : (isTallPortrait ? 24 : 28))
                 .padding(.top, 16)
                 .padding(.bottom, 10)
 
-                if w < 700 {
+                if isTallPortrait {
+                    // Tall 9:16 portrait layout: full-width hero cover & info above full-width tracklist
+                    let fullContentWidth = max(220, w - 48)
+                    let artSize = min(fullContentWidth, max(220, h - 440))
+                    let tracklistWidth = fullContentWidth
+
+                    VStack(spacing: 18) {
+                        VStack(spacing: 14) {
+                            ArtworkView(track: album.sampleTrack, cornerRadius: 18, shadowRadius: 20, maxPixelSize: nil)
+                                .frame(width: artSize, height: artSize)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 18)
+                                        .strokeBorder(Color.white.opacity(0.16), lineWidth: 1)
+                                )
+
+                            albumMetadataBlock(
+                                trackList: trackList,
+                                titleSize: artSize > 440 ? 28 : 24,
+                                artistSize: artSize > 440 ? 18 : 16,
+                                centered: true
+                            )
+
+                            albumActionButtons(trackList: trackList)
+                        }
+
+                        albumTracklistSection(
+                            trackList: trackList,
+                            showQualityText: tracklistWidth >= 540,
+                            showPlaysAndDR: tracklistWidth >= 420,
+                            showFormatBadge: tracklistWidth >= 360
+                        )
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.bottom, 18)
+                } else if w < 700 {
                     // Compact stacked layout for narrow windows
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .center, spacing: 18) {
@@ -258,10 +293,11 @@ public struct AlbumDetailView: View {
     }
 
     @ViewBuilder
-    private func albumMetadataBlock(trackList: [Track], titleSize: CGFloat, artistSize: CGFloat) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private func albumMetadataBlock(trackList: [Track], titleSize: CGFloat, artistSize: CGFloat, centered: Bool = false) -> some View {
+        VStack(alignment: centered ? .center : .leading, spacing: 6) {
             Text(album.title)
                 .font(.system(size: titleSize, weight: .bold))
+                .multilineTextAlignment(centered ? .center : .leading)
                 .lineLimit(2)
 
             if !album.artist.isEmpty && UUID(uuidString: album.artist) == nil {

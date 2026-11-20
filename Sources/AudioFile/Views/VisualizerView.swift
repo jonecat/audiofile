@@ -45,12 +45,12 @@ public struct VisualizerView: View {
         } else if !vm.showVisualizer {
             // Visualizer is OFF: Lyrics and Artwork become much larger to fill the viewport
             if vm.showTrackInfo && vm.showLyrics {
-                if w >= 820 {
+                if w >= 820 && h <= w * 1.15 {
                     // Wide 2-Column Split: Parallel & Top-Justified to Lyrics Card
                     twoColumnInfoAndLyricsView(track: track, width: w, height: h)
                 } else {
-                    // Narrow Stacked: Larger Artwork/Info on Top, Expansive Full-Height Lyrics on Bottom
-                    stackedInfoAndLyricsView(track: track, height: h)
+                    // Narrow or Tall Portrait Stacked: Artwork/Info on Top, Expansive Lyrics on Bottom
+                    stackedInfoAndLyricsView(track: track, width: w, height: h)
                 }
             } else if vm.showTrackInfo && !vm.showLyrics {
                 // Info ONLY: Hero Vinyl / Artwork Center Stage
@@ -63,10 +63,10 @@ public struct VisualizerView: View {
             // Visualizer is ON
             if vm.showTrackInfo && vm.showLyrics {
                 // All 3 ON: Standard Stacked
-                allThreeSectionsView(track: track, height: h)
+                allThreeSectionsView(track: track, width: w, height: h)
             } else if vm.showTrackInfo && !vm.showLyrics {
                 // Info + Visualizer
-                infoAndVisualizerView(track: track, height: h)
+                infoAndVisualizerView(track: track, width: w, height: h)
             } else if !vm.showTrackInfo && vm.showLyrics {
                 // Lyrics + Visualizer
                 lyricsAndVisualizerView(height: h)
@@ -139,10 +139,13 @@ public struct VisualizerView: View {
     }
 
     @ViewBuilder
-    private func stackedInfoAndLyricsView(track: Track, height h: CGFloat) -> some View {
-        let artSize = min(h * 0.28, 200)
+    private func stackedInfoAndLyricsView(track: Track, width w: CGFloat, height h: CGFloat) -> some View {
+        let isTallPortrait = (h > w * 1.1 && h >= 720)
+        let artSize = isTallPortrait
+            ? min(max(220, w * 0.62), max(220, h * 0.34), 480)
+            : min(h * 0.28, 200)
 
-        VStack(spacing: 12) {
+        VStack(spacing: isTallPortrait ? 14 : 12) {
             HStack {
                 Spacer()
                 VisualizerTogglesBar(vm: vm)
@@ -150,13 +153,17 @@ public struct VisualizerView: View {
             .padding(.horizontal, 24)
             .padding(.top, 14)
 
-            VisualizerHeaderView(
-                track: track,
-                vm: vm,
-                artworkSize: artSize,
-                titleSize: 22,
-                artistSize: 16
-            )
+            if isTallPortrait {
+                VisualizerPortraitHeroHeaderView(track: track, vm: vm, artworkSize: artSize)
+            } else {
+                VisualizerHeaderView(
+                    track: track,
+                    vm: vm,
+                    artworkSize: artSize,
+                    titleSize: 22,
+                    artistSize: 16
+                )
+            }
 
             LyricsCardView(
                 status: vm.lyrics.status,
@@ -173,9 +180,12 @@ public struct VisualizerView: View {
     }
 
     @ViewBuilder
-    private func allThreeSectionsView(track: Track, height h: CGFloat) -> some View {
+    private func allThreeSectionsView(track: Track, width w: CGFloat, height h: CGFloat) -> some View {
+        let isTallPortrait = (h > w * 1.1 && h >= 950)
         let isCompact = h < 580
-        let artSize: CGFloat = isCompact ? 95 : (h < 720 ? 115 : 130)
+        let artSize: CGFloat = isTallPortrait
+            ? min(max(150, w * 0.28), max(150, h * 0.18), 220)
+            : (isCompact ? 95 : (h < 720 ? 115 : 130))
 
         VStack(spacing: isCompact ? 10 : 14) {
             HStack {
@@ -189,30 +199,34 @@ public struct VisualizerView: View {
                 track: track,
                 vm: vm,
                 artworkSize: artSize,
-                titleSize: isCompact ? 17 : 20,
-                artistSize: isCompact ? 13 : 15
+                titleSize: isTallPortrait ? 22 : (isCompact ? 17 : 20),
+                artistSize: isTallPortrait ? 16 : (isCompact ? 13 : 15)
             )
 
             LyricsCardView(
                 status: vm.lyrics.status,
                 window: vm.lyrics.currentWindow,
                 scale: $vm.lyricsScale,
-                isExpanded: false,
+                isExpanded: isTallPortrait,
                 showHeader: true,
                 onSeek: { vm.audio.seek(to: $0) }
             )
+            .frame(maxHeight: isTallPortrait ? h * 0.34 : nil)
             .padding(.horizontal, 24)
 
             VisualizerCardContainer(vm: vm)
-                .frame(maxWidth: .infinity, minHeight: 60, maxHeight: .infinity)
+                .frame(maxWidth: .infinity, minHeight: isTallPortrait ? 140 : 60, maxHeight: .infinity)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 12)
         }
     }
 
     @ViewBuilder
-    private func infoAndVisualizerView(track: Track, height h: CGFloat) -> some View {
-        let artSize = min(170, max(120, h * 0.24))
+    private func infoAndVisualizerView(track: Track, width w: CGFloat, height h: CGFloat) -> some View {
+        let isTallPortrait = (h > w * 1.1 && h >= 720)
+        let artSize = isTallPortrait
+            ? min(max(220, w * 0.62), max(220, h * 0.38), 480)
+            : min(170, max(120, h * 0.24))
 
         VStack(spacing: 14) {
             HStack {
@@ -222,13 +236,17 @@ public struct VisualizerView: View {
             .padding(.horizontal, 24)
             .padding(.top, 14)
 
-            VisualizerHeaderView(
-                track: track,
-                vm: vm,
-                artworkSize: artSize,
-                titleSize: 22,
-                artistSize: 16
-            )
+            if isTallPortrait {
+                VisualizerPortraitHeroHeaderView(track: track, vm: vm, artworkSize: artSize)
+            } else {
+                VisualizerHeaderView(
+                    track: track,
+                    vm: vm,
+                    artworkSize: artSize,
+                    titleSize: 22,
+                    artistSize: 16
+                )
+            }
 
             VisualizerCardContainer(vm: vm)
                 .frame(maxWidth: .infinity, minHeight: 100, maxHeight: .infinity)
@@ -536,6 +554,75 @@ private struct VisualizerHeaderView: View {
             }
 
             Spacer()
+        }
+        .padding(.horizontal, 24)
+    }
+}
+
+// MARK: - Portrait Hero Header (Centered Large Cover for 9:16 Screens)
+
+private struct VisualizerPortraitHeroHeaderView: View {
+    let track: Track
+    @ObservedObject var vm: PlayerViewModel
+    let artworkSize: CGFloat
+
+    var body: some View {
+        let cornerRad: CGFloat = min(20, max(14, artworkSize * 0.04))
+
+        VStack(spacing: 12) {
+            Button {
+                vm.inspectingArtworkTrack = track
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    ArtworkView(track: track, cornerRadius: cornerRad, shadowRadius: 16, maxPixelSize: nil)
+                        .frame(width: artworkSize, height: artworkSize)
+
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(.white)
+                        .padding(6)
+                        .background(Circle().fill(Color.black.opacity(0.6)))
+                        .padding(8)
+                }
+                .overlay(
+                    RoundedRectangle(cornerRadius: cornerRad)
+                        .stroke(Color.white.opacity(0.16), lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .help("Click to view full album artwork")
+
+            VStack(spacing: 4) {
+                Text(track.displayTitle)
+                    .font(.system(size: artworkSize > 340 ? 24 : 20, weight: .bold))
+                    .multilineTextAlignment(.center)
+                    .lineLimit(2)
+
+                Text(track.displayArtist)
+                    .font(.system(size: artworkSize > 340 ? 17 : 15, weight: .semibold))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+
+                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                    .font(.system(size: artworkSize > 340 ? 14 : 13))
+                    .foregroundColor(.secondary.opacity(0.85))
+                    .lineLimit(1)
+
+                HStack(spacing: 8) {
+                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    }
+
+                    FormatBadgeView(format: track.format, isLossless: track.isLossless)
+
+                    Text(track.qualityDescription)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+                .padding(.top, 2)
+            }
+            .frame(maxWidth: max(artworkSize, 360))
         }
         .padding(.horizontal, 24)
     }

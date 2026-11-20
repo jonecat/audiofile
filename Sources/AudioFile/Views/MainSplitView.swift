@@ -10,52 +10,55 @@ public struct MainSplitView: View {
             SidebarView(vm: vm)
                 .navigationSplitViewColumnWidth(min: 180, ideal: 220, max: 280)
         } detail: {
-            Group {
-                if vm.isSearching {
-                    SearchResultsView(vm: vm)
-                } else {
-                    switch vm.selectedSection {
-                    case .artists:
-                        ArtistsView(vm: vm)
-                    case .albums:
-                        AlbumsView(vm: vm)
-                    case .songs:
-                        SongsView(vm: vm)
-                    case .health:
-                        HealthView(vm: vm)
-                    case .visualizer:
-                        VisualizerView(vm: vm)
-                    case .opticalDisc:
-                        OpticalDiscView(vm: vm)
-                    case .favorites, .recentlyPlayed, .playlist:
-                        PlaylistsView(vm: vm, section: vm.selectedSection)
-                    case .settings:
-                        SongsView(vm: vm)
+            GeometryReader { detailGeo in
+                Group {
+                    if vm.isSearching {
+                        SearchResultsView(vm: vm)
+                    } else {
+                        switch vm.selectedSection {
+                        case .artists:
+                            ArtistsView(vm: vm)
+                        case .albums:
+                            AlbumsView(vm: vm)
+                        case .songs:
+                            SongsView(vm: vm)
+                        case .health:
+                            HealthView(vm: vm)
+                        case .visualizer:
+                            VisualizerView(vm: vm)
+                        case .opticalDisc:
+                            OpticalDiscView(vm: vm)
+                        case .favorites, .recentlyPlayed, .playlist:
+                            PlaylistsView(vm: vm, section: vm.selectedSection)
+                        case .settings:
+                            SongsView(vm: vm)
+                        }
                     }
                 }
-            }
-            .frame(minWidth: 500, maxWidth: .infinity, maxHeight: .infinity)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                // Floating Liquid Glass Bottom Player Deck
-                PlayerBarView(vm: vm)
-            }
-            .overlay(alignment: .top) {
-                if let toast = vm.currentToast {
-                    ToastView(toast: toast)
-                        .padding(.top, 14)
-                        .transition(.asymmetric(
-                            insertion: .move(edge: .top).combined(with: .opacity),
-                            removal: .opacity
-                        ))
-                        .onTapGesture {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                vm.currentToast = nil
-                            }
-                        }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    // Floating Liquid Glass Bottom Player Deck
+                    PlayerBarView(vm: vm, availableWidth: detailGeo.size.width)
                 }
+                .overlay(alignment: .top) {
+                    if let toast = vm.currentToast {
+                        ToastView(toast: toast)
+                            .padding(.top, 14)
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .top).combined(with: .opacity),
+                                removal: .opacity
+                            ))
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    vm.currentToast = nil
+                                }
+                            }
+                    }
+                }
+                .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.currentToast)
             }
-            .animation(.spring(response: 0.35, dampingFraction: 0.75), value: vm.currentToast)
-            .navigationSplitViewColumnWidth(min: 500, ideal: 820)
+            .frame(minWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
+            .navigationSplitViewColumnWidth(min: 460, ideal: 820)
         }
         .searchable(text: $vm.searchQuery, prompt: "Search artists, albums, songs, playlists…")
         .sheet(isPresented: $vm.showingSettings) {

@@ -84,7 +84,7 @@ struct AudioFileApp: App {
     var body: some Scene {
         WindowGroup {
             MainSplitView(vm: vm)
-                .frame(minWidth: 880, minHeight: 560)
+                .frame(minWidth: 680, minHeight: 560)
         }
         .windowStyle(.titleBar)
         .windowToolbarStyle(.unified)
