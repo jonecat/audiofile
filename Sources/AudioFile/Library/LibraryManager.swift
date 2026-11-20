@@ -20,6 +20,7 @@ public final class LibraryManager: ObservableObject {
 
     public private(set) var tracksById: [String: Track] = [:]
     private var albumsByArtistMap: [String: [String]] = [:]
+    private var albumYearByArtistAndAlbumMap: [String: Int] = [:]
     private var tracksByArtistMap: [String: [Track]] = [:]
     private var tracksByArtistAndAlbumMap: [String: [Track]] = [:]
     private var trackCountByArtistMap: [String: Int] = [:]
@@ -552,6 +553,27 @@ public final class LibraryManager: ObservableObject {
         albumsByArtistMap[artist] ?? []
     }
 
+    public func albumYear(for artist: String, album: String) -> Int? {
+        albumYearByArtistAndAlbumMap["\(artist)\0\(album)"]
+    }
+
+    private static func compareAlbumYears(_ a: Int?, _ b: Int?) -> ComparisonResult {
+        let yearA = a.flatMap { $0 > 0 ? $0 : nil }
+        let yearB = b.flatMap { $0 > 0 ? $0 : nil }
+        switch (yearA, yearB) {
+        case let (yA?, yB?):
+            if yA < yB { return .orderedAscending }
+            if yA > yB { return .orderedDescending }
+            return .orderedSame
+        case (.some, .none):
+            return .orderedAscending
+        case (.none, .some):
+            return .orderedDescending
+        case (.none, .none):
+            return .orderedSame
+        }
+    }
+
     public func tracks(for artist: String, album: String? = nil) -> [Track] {
         if let alb = album {
             return tracksByArtistAndAlbumMap["\(artist)\0\(alb)"] ?? []
@@ -577,7 +599,6 @@ public final class LibraryManager: ObservableObject {
         var albumDict: [String: [Track]] = [:]
 
         var artistAlbumsSet: [String: Set<String>] = [:]
-        var artistTracks: [String: [Track]] = [:]
         var artistAlbumTracks: [String: [Track]] = [:]
 
         for track in tracks {
@@ -595,12 +616,10 @@ public final class LibraryManager: ObservableObject {
             albumDict[key, default: []].append(track)
 
             artistAlbumsSet[artist, default: []].insert(album)
-            artistTracks[artist, default: []].append(track)
             artistAlbumTracks["\(artist)\0\(album)", default: []].append(track)
 
             if albumArtist != artist {
                 artistAlbumsSet[albumArtist, default: []].insert(album)
-                artistTracks[albumArtist, default: []].append(track)
                 artistAlbumTracks["\(albumArtist)\0\(album)", default: []].append(track)
             }
         }
@@ -608,20 +627,7 @@ public final class LibraryManager: ObservableObject {
         self.tracksById = byId
         self.uniqueArtists = artistsList.sorted { Self.compareArtists($0, $1) }
 
-        var sortedAlbumsByArtist: [String: [String]] = [:]
-        sortedAlbumsByArtist.reserveCapacity(artistAlbumsSet.count)
-        for (artist, albumSet) in artistAlbumsSet {
-            sortedAlbumsByArtist[artist] = albumSet.sorted {
-                $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-            }
-        }
-        self.albumsByArtistMap = sortedAlbumsByArtist
-
-        let trackSort: (Track, Track) -> Bool = { a, b in
-            if a.displayAlbum != b.displayAlbum {
-                let cmp = a.displayAlbum.localizedCaseInsensitiveCompare(b.displayAlbum)
-                if cmp != .orderedSame { return cmp == .orderedAscending }
-            }
+        let albumTrackSort: (Track, Track) -> Bool = { a, b in
             if (a.discNumber ?? 1) != (b.discNumber ?? 1) {
                 return (a.discNumber ?? 1) < (b.discNumber ?? 1)
             }
@@ -631,19 +637,54 @@ public final class LibraryManager: ObservableObject {
             return a.titleSortKey < b.titleSortKey
         }
 
-        var counts: [String: Int] = [:]
-        counts.reserveCapacity(artistTracks.count)
-        for (artist, list) in artistTracks {
-            counts[artist] = list.count
-            artistTracks[artist] = list.sorted(by: trackSort)
-        }
-        self.trackCountByArtistMap = counts
-        self.tracksByArtistMap = artistTracks
-
+        var albumYearByArtistAndAlbum: [String: Int] = [:]
+        albumYearByArtistAndAlbum.reserveCapacity(artistAlbumTracks.count)
         for (key, list) in artistAlbumTracks {
-            artistAlbumTracks[key] = list.sorted(by: trackSort)
+            let sorted = list.sorted(by: albumTrackSort)
+            artistAlbumTracks[key] = sorted
+            if let year = sorted.compactMap(\.year).first(where: { $0 > 0 }) {
+                albumYearByArtistAndAlbum[key] = year
+            }
         }
         self.tracksByArtistAndAlbumMap = artistAlbumTracks
+        self.albumYearByArtistAndAlbumMap = albumYearByArtistAndAlbum
+
+        var sortedAlbumsByArtist: [String: [String]] = [:]
+        sortedAlbumsByArtist.reserveCapacity(artistAlbumsSet.count)
+        for (artist, albumSet) in artistAlbumsSet {
+            sortedAlbumsByArtist[artist] = albumSet.sorted { albumA, albumB in
+                let yearCmp = Self.compareAlbumYears(
+                    albumYearByArtistAndAlbum["\(artist)\0\(albumA)"],
+                    albumYearByArtistAndAlbum["\(artist)\0\(albumB)"]
+                )
+                if yearCmp != .orderedSame {
+                    return yearCmp == .orderedAscending
+                }
+                let titleCmp = albumA.localizedCaseInsensitiveCompare(albumB)
+                if titleCmp != .orderedSame {
+                    return titleCmp == .orderedAscending
+                }
+                return albumA < albumB
+            }
+        }
+        self.albumsByArtistMap = sortedAlbumsByArtist
+
+        var counts: [String: Int] = [:]
+        counts.reserveCapacity(sortedAlbumsByArtist.count)
+        var orderedArtistTracks: [String: [Track]] = [:]
+        orderedArtistTracks.reserveCapacity(sortedAlbumsByArtist.count)
+        for (artist, orderedAlbums) in sortedAlbumsByArtist {
+            var combined: [Track] = []
+            for album in orderedAlbums {
+                if let albumTracks = artistAlbumTracks["\(artist)\0\(album)"] {
+                    combined.append(contentsOf: albumTracks)
+                }
+            }
+            counts[artist] = combined.count
+            orderedArtistTracks[artist] = combined
+        }
+        self.trackCountByArtistMap = counts
+        self.tracksByArtistMap = orderedArtistTracks
 
         var albumList: [AlbumInfo] = []
         albumList.reserveCapacity(albumDict.count)
@@ -652,7 +693,7 @@ public final class LibraryManager: ObservableObject {
             let title = first.displayAlbum
             let rawArtist = first.displayAlbumArtist
             let artist = (UUID(uuidString: rawArtist) != nil) ? first.displayArtist : rawArtist
-            let year = trackList.compactMap(\.year).first
+            let year = trackList.compactMap(\.year).first(where: { $0 > 0 })
             albumList.append(AlbumInfo(
                 title: title,
                 artist: artist,
@@ -678,19 +719,9 @@ public final class LibraryManager: ObservableObject {
         }
 
         self.allAlbumsByYear = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
-            let yearA = (a.year != nil && a.year! > 0) ? a.year : nil
-            let yearB = (b.year != nil && b.year! > 0) ? b.year : nil
-            switch (yearA, yearB) {
-            case let (yA?, yB?):
-                if yA != yB {
-                    return yA < yB
-                }
-            case (.some, .none):
-                return true
-            case (.none, .some):
-                return false
-            case (.none, .none):
-                break
+            let yearCmp = Self.compareAlbumYears(a.year, b.year)
+            if yearCmp != .orderedSame {
+                return yearCmp == .orderedAscending
             }
             if a.artist != b.artist {
                 return Self.compareArtists(a.artist, b.artist)
