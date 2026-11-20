@@ -65,6 +65,15 @@ public enum HealthIssueCategory: String, CaseIterable, Identifiable, Sendable {
             return false
         }
     }
+
+    public var requiresApproval: Bool {
+        switch self {
+        case .missingInfo, .missingArtwork, .splitAlbums:
+            return true
+        case .missingLyrics, .dynamicRange, .fakeLossless:
+            return false
+        }
+    }
 }
 
 public enum LosslessAuditVerdict: String, Codable, Sendable {
@@ -147,7 +156,8 @@ public final class LibraryHealthManager: ObservableObject {
     @Published public var selectedCategory: HealthIssueCategory = .missingInfo
     @Published public var fixMode: HealthFixMode = .safeLibraryAndSidecar
     @Published public var isAnalyzing: Bool = false
-    @Published public var isFindingFixes: Bool = false
+    @Published public private(set) var runningCategories: Set<HealthIssueCategory> = []
+    @Published public private(set) var categoryProgressText: [HealthIssueCategory: String] = [:]
     @Published public var progressText: String = ""
     @Published public var checkCompletedMessage: String?
     @Published public var lastCheckedDate: Date?
@@ -250,6 +260,7 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public func clearAllOverridesAndIgnored() {
+        stopAllFindingFixes()
         overrides.removeAll()
         ignoredIssueIds.removeAll()
         losslessAuditResults.removeAll()
@@ -349,7 +360,7 @@ public final class LibraryHealthManager: ObservableObject {
     }
 
     public var readyFixesInSelectedCategory: [HealthIssue] {
-        if selectedCategory == .fakeLossless { return [] }
+        guard selectedCategory.requiresApproval else { return [] }
         return issues(for: selectedCategory).filter { $0.fixFound }
     }
 
@@ -366,14 +377,12 @@ public final class LibraryHealthManager: ObservableObject {
             analyzeLibrary()
             await analyzeTask?.value
 
-            if includeDynamicRangeAnalysis {
-                let drIssues = issues(for: .dynamicRange)
-                if !drIssues.isEmpty {
-                    await runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
-                }
+            progressText = ""
+
+            if includeDynamicRangeAnalysis && !isRunning(.dynamicRange) && !issues(for: .dynamicRange).isEmpty {
+                findFixes(for: .dynamicRange)
             }
 
-            progressText = ""
             checkCompletedMessage = "Health check complete"
             try? await Task.sleep(for: .seconds(2.5))
             if checkCompletedMessage == "Health check complete" {
@@ -387,6 +396,8 @@ public final class LibraryHealthManager: ObservableObject {
         analyzeTask?.cancel()
         analyzeGeneration &+= 1
         let generation = analyzeGeneration
+        let wasInitialCheck = (lastCheckedDate == nil)
+        let preAnalyzeIds = Set(issues.map(\.id))
 
         guard !tracks.isEmpty else {
             analyzeTask = nil
@@ -415,13 +426,56 @@ public final class LibraryHealthManager: ObservableObject {
                 return
             }
 
-            self.issues = detected
+            let liveById = Dictionary(uniqueKeysWithValues: self.issues.map { ($0.id, $0) })
+            let liveTracksById = LibraryManager.shared.tracksById
+            let liveAudits = self.losslessAuditResults
+
+            var merged: [HealthIssue] = []
+            merged.reserveCapacity(detected.count)
+            for var item in detected {
+                guard !self.ignoredIssueIds.contains(item.id) else { continue }
+                if preAnalyzeIds.contains(item.id) && liveById[item.id] == nil {
+                    // Resolved or ignored while computeHealthIssues was in flight
+                    continue
+                }
+                if item.category == .dynamicRange,
+                   liveTracksById[item.primaryTrack.id]?.dynamicRange != nil {
+                    continue
+                }
+                if item.category == .fakeLossless {
+                    let cacheKey = item.primaryTrack.path.standardizedFileURL.path
+                    if let cached = liveAudits[cacheKey], cached.fileSize == item.primaryTrack.fileSize {
+                        if cached.verdict == .verifiedLossless {
+                            continue
+                        }
+                        item = Self.makeSuspectLosslessIssue(id: item.id, track: item.primaryTrack, audit: cached)
+                    }
+                }
+                if let live = liveById[item.id] {
+                    item.isSearchingFix = live.isSearchingFix
+                    if let note = live.statusNote {
+                        item.statusNote = note
+                    }
+                    if item.category.requiresApproval && live.fixFound && !item.fixFound {
+                        item.proposedOverride = live.proposedOverride
+                        item.proposedArtworkData = live.proposedArtworkData
+                        item.proposedArtworkURL = live.proposedArtworkURL
+                        item.proposedSummary = live.proposedSummary
+                        item.fixFound = true
+                        item.statusNote = live.statusNote
+                    }
+                }
+                merged.append(item)
+            }
+
+            self.issues = merged
             self.lastCheckedDate = Date()
             self.isAnalyzing = false
             self.analyzeTask = nil
 
-            // Auto-select first category that has issues if current category is empty
-            if self.issues(for: self.selectedCategory).isEmpty,
+            // Auto-select first category that has issues on initial check only
+            if wasInitialCheck,
+               self.issues(for: self.selectedCategory).isEmpty,
                let firstNonEmpty = HealthIssueCategory.allCases.first(where: { !self.issues(for: $0).isEmpty }) {
                 self.selectedCategory = firstNonEmpty
             }
@@ -546,21 +600,20 @@ public final class LibraryHealthManager: ObservableObject {
             let issueId = "lyrics_\(track.id)"
             guard !ignoredIssueIds.contains(issueId) else { continue }
             if !Self.hasCachedOrLocalLyrics(for: track, cachedFilenames: cachedLyricsFiles) {
-                if let prev = existingById[issueId], prev.fixFound {
-                    detected.append(prev)
-                } else {
-                    detected.append(HealthIssue(
-                        id: issueId,
-                        category: .missingLyrics,
-                        trackIds: [track.id],
-                        primaryTrack: track,
-                        duplicateTrack: nil,
-                        issueDescription: "No synced .lrc lyrics cached",
-                        currentSummary: "\(track.displayArtist) - \(track.displayTitle)",
-                        proposedSummary: "Click \"Find Fixes\" to search LRCLIB for synced lyrics",
-                        fixFound: false
-                    ))
-                }
+                let prev = existingById[issueId]
+                detected.append(HealthIssue(
+                    id: issueId,
+                    category: .missingLyrics,
+                    trackIds: [track.id],
+                    primaryTrack: track,
+                    duplicateTrack: nil,
+                    issueDescription: "No synced .lrc lyrics cached",
+                    currentSummary: "\(track.displayArtist) - \(track.displayTitle)",
+                    proposedSummary: "Fetch & cache synced .lrc lyrics from LRCLIB (saved in app cache)",
+                    isSearchingFix: prev?.isSearchingFix ?? false,
+                    fixFound: false,
+                    statusNote: prev?.statusNote
+                ))
             }
         }
 
@@ -570,21 +623,20 @@ public final class LibraryHealthManager: ObservableObject {
             let issueId = "dr_\(track.id)"
             guard !ignoredIssueIds.contains(issueId) else { continue }
             if track.dynamicRange == nil {
-                if let prev = existingById[issueId], prev.fixFound {
-                    detected.append(prev)
-                } else {
-                    detected.append(HealthIssue(
-                        id: issueId,
-                        category: .dynamicRange,
-                        trackIds: [track.id],
-                        primaryTrack: track,
-                        duplicateTrack: nil,
-                        issueDescription: "No Dynamic Range score",
-                        currentSummary: "\(track.displayArtist) - \(track.displayTitle)",
-                        proposedSummary: "Measure Pleasurize TT DR Meter score",
-                        fixFound: false
-                    ))
-                }
+                let prev = existingById[issueId]
+                detected.append(HealthIssue(
+                    id: issueId,
+                    category: .dynamicRange,
+                    trackIds: [track.id],
+                    primaryTrack: track,
+                    duplicateTrack: nil,
+                    issueDescription: "No Dynamic Range score",
+                    currentSummary: "\(track.displayArtist) - \(track.displayTitle)",
+                    proposedSummary: "Measure Pleasurize TT DR Meter score (saved in library database)",
+                    isSearchingFix: prev?.isSearchingFix ?? false,
+                    fixFound: false,
+                    statusNote: prev?.statusNote
+                ))
             }
         }
 
@@ -604,18 +656,7 @@ public final class LibraryHealthManager: ObservableObject {
 
             if let cached = losslessAuditResults[cacheKey], cached.fileSize == track.fileSize {
                 if cached.verdict == .suspectMP3_128 || cached.verdict == .suspectMP3_320 {
-                    detected.append(HealthIssue(
-                        id: issueId,
-                        category: .fakeLossless,
-                        trackIds: [track.id],
-                        primaryTrack: track,
-                        duplicateTrack: nil,
-                        issueDescription: "Suspect Lossy Transcode",
-                        currentSummary: "\(track.format) (\(track.qualityDescription)) • \(track.path.lastPathComponent)",
-                        proposedSummary: "Spectral shelf near \(cached.cutoffHz ?? 16000) Hz — likely transcoded from lossy audio",
-                        fixFound: true,
-                        statusNote: cached.summary
-                    ))
+                    detected.append(Self.makeSuspectLosslessIssue(id: issueId, track: track, audit: cached))
                 }
             } else {
                 detected.append(HealthIssue(
@@ -633,6 +674,25 @@ public final class LibraryHealthManager: ObservableObject {
         }
 
         return detected
+    }
+
+    private nonisolated static func makeSuspectLosslessIssue(
+        id: String,
+        track: Track,
+        audit: LosslessAuditResult
+    ) -> HealthIssue {
+        HealthIssue(
+            id: id,
+            category: .fakeLossless,
+            trackIds: [track.id],
+            primaryTrack: track,
+            duplicateTrack: nil,
+            issueDescription: "Suspect Lossy Transcode",
+            currentSummary: "\(track.format) (\(track.qualityDescription)) • \(track.path.lastPathComponent)",
+            proposedSummary: "Spectral shelf near \(audit.cutoffHz ?? 16000) Hz — likely transcoded from lossy audio",
+            fixFound: true,
+            statusNote: audit.summary
+        )
     }
 
     // MARK: - Diagnose Track Info (Filename / Tag Heuristics)
@@ -757,29 +817,65 @@ public final class LibraryHealthManager: ObservableObject {
         return (nil, nil, nil)
     }
 
-    // MARK: - Find Fixes Per Section (with Adaptive Rate-Limit Pacing)
+    // MARK: - Find Fixes Per Section (Independent & Adaptive Rate-Limit Pacing)
 
-    private var activeFindTask: Task<Void, Never>?
+    private var activeCategoryTasks: [HealthIssueCategory: Task<Void, Never>] = [:]
+    private var categoryRunGenerations: [HealthIssueCategory: UInt64] = [:]
 
-    public func stopFindingFixes() {
-        activeFindTask?.cancel()
-        activeFindTask = nil
-        for i in issues.indices where issues[i].isSearchingFix {
+    public func isRunning(_ category: HealthIssueCategory) -> Bool {
+        runningCategories.contains(category)
+    }
+
+    public var isAnyTaskRunning: Bool {
+        !runningCategories.isEmpty
+    }
+
+    public func progressText(for category: HealthIssueCategory) -> String? {
+        categoryProgressText[category]
+    }
+
+    private func beginCategoryRun(for category: HealthIssueCategory) -> UInt64 {
+        let nextGen = categoryRunGenerations[category, default: 0] &+ 1
+        categoryRunGenerations[category] = nextGen
+        runningCategories.insert(category)
+        return nextGen
+    }
+
+    private func finishCategoryRun(for category: HealthIssueCategory, generation: UInt64) {
+        guard categoryRunGenerations[category] == generation else { return }
+        runningCategories.remove(category)
+        categoryProgressText.removeValue(forKey: category)
+        activeCategoryTasks.removeValue(forKey: category)
+        for i in issues.indices where issues[i].category == category && issues[i].isSearchingFix {
             issues[i].isSearchingFix = false
         }
-        progressText = ""
-        isFindingFixes = false
+    }
+
+    public func stopFindingFixes(for category: HealthIssueCategory) {
+        categoryRunGenerations[category, default: 0] &+= 1
+        activeCategoryTasks[category]?.cancel()
+        activeCategoryTasks.removeValue(forKey: category)
+        runningCategories.remove(category)
+        categoryProgressText.removeValue(forKey: category)
+        for i in issues.indices where issues[i].category == category && issues[i].isSearchingFix {
+            issues[i].isSearchingFix = false
+        }
+    }
+
+    public func stopAllFindingFixes() {
+        for category in Array(runningCategories) {
+            stopFindingFixes(for: category)
+        }
     }
 
     public func findFixes(for category: HealthIssueCategory) {
-        guard !isFindingFixes, category.supportsFindFixes else { return }
+        guard !isRunning(category), category.supportsFindFixes else { return }
 
         if category == .dynamicRange {
             let drIssues = issues(for: .dynamicRange)
             guard !drIssues.isEmpty else { return }
-            activeFindTask = Task { @MainActor in
-                await runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
-                activeFindTask = nil
+            activeCategoryTasks[.dynamicRange] = Task { @MainActor [weak self] in
+                await self?.runDynamicRangeBatchAnalysis(issuesToProcess: drIssues)
             }
             return
         }
@@ -787,198 +883,219 @@ public final class LibraryHealthManager: ObservableObject {
         if category == .fakeLossless {
             let auditIssues = issues(for: .fakeLossless).filter { !$0.fixFound }
             guard !auditIssues.isEmpty else { return }
-            activeFindTask = Task { @MainActor in
-                await runLosslessAuditBatch(issuesToProcess: auditIssues)
-                activeFindTask = nil
+            activeCategoryTasks[.fakeLossless] = Task { @MainActor [weak self] in
+                await self?.runLosslessAuditBatch(issuesToProcess: auditIssues)
             }
             return
         }
 
-        isFindingFixes = true
+        let targetIds = issues
+            .filter { $0.category == category && (!$0.fixFound || $0.category == .missingInfo) }
+            .map(\.id)
+        guard !targetIds.isEmpty else { return }
 
-        activeFindTask = Task { @MainActor in
-            let targetIds = issues
-                .filter { $0.category == category && (!$0.fixFound || $0.category == .missingInfo) }
-                .map(\.id)
+        let gen = beginCategoryRun(for: category)
+        activeCategoryTasks[category] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishCategoryRun(for: category, generation: gen) }
+
             let requiresRateLimitThrottle = (targetIds.count > 20)
 
             for (stepIdx, issueId) in targetIds.enumerated() {
-                if Task.isCancelled { break }
-                guard let startIdx = issues.firstIndex(where: { $0.id == issueId }) else { continue }
-                let issue = issues[startIdx]
+                if Task.isCancelled || self.categoryRunGenerations[category] != gen { break }
+                guard let startIdx = self.issues.firstIndex(where: { $0.id == issueId }) else { continue }
+                let issue = self.issues[startIdx]
 
                 let requestStart = ContinuousClock.now
-                issues[startIdx].isSearchingFix = true
-                if requiresRateLimitThrottle {
-                    progressText = "Checking \(stepIdx + 1) of \(targetIds.count) (rate-limit safe: 1 query / 3s): \(issue.primaryTrack.displayTitle)…"
+                self.issues[startIdx].isSearchingFix = true
+                if category == .missingLyrics {
+                    self.categoryProgressText[category] = "Fetching lyrics \(stepIdx + 1) of \(targetIds.count): \(issue.primaryTrack.displayTitle)…"
+                } else if requiresRateLimitThrottle {
+                    self.categoryProgressText[category] = "Checking \(stepIdx + 1) of \(targetIds.count) (rate-limit safe: 1 query / 3s): \(issue.primaryTrack.displayTitle)…"
                 } else {
-                    progressText = "Checking \(stepIdx + 1) of \(targetIds.count): \(issue.primaryTrack.displayTitle)…"
+                    self.categoryProgressText[category] = "Checking \(stepIdx + 1) of \(targetIds.count): \(issue.primaryTrack.displayTitle)…"
                 }
 
                 switch category {
                 case .missingInfo:
-                    let enriched = await lookupTrackMetadataOnline(for: issue.primaryTrack, existingOverride: issue.proposedOverride)
-                    if let idx = issues.firstIndex(where: { $0.id == issueId }) {
+                    let enriched = await self.lookupTrackMetadataOnline(for: issue.primaryTrack, existingOverride: issue.proposedOverride)
+                    if Task.isCancelled || self.categoryRunGenerations[category] != gen { break }
+                    if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
                         if let enriched {
-                            issues[idx].proposedOverride = enriched.override
-                            issues[idx].proposedSummary = enriched.summary
-                            issues[idx].fixFound = true
-                            issues[idx].statusNote = "Verified via online catalog"
-                        } else if issues[idx].fixFound {
-                            issues[idx].statusNote = "Ready from filename/folder structure"
+                            self.issues[idx].proposedOverride = enriched.override
+                            self.issues[idx].proposedSummary = enriched.summary
+                            self.issues[idx].fixFound = true
+                            self.issues[idx].statusNote = "Verified via online catalog"
+                        } else if self.issues[idx].fixFound {
+                            self.issues[idx].statusNote = "Ready from filename/folder structure"
                         } else {
-                            issues[idx].statusNote = "Click Edit to enter tags manually"
+                            self.issues[idx].statusNote = "Click Edit to enter tags manually"
                         }
-                        issues[idx].isSearchingFix = false
+                        self.issues[idx].isSearchingFix = false
                     }
 
                 case .missingArtwork:
-                    let artResult = await lookupAlbumArtworkOnline(
+                    let artResult = await self.lookupAlbumArtworkOnline(
                         artist: issue.primaryTrack.displayArtist,
                         album: issue.primaryTrack.displayAlbum,
                         fallbackTitle: issue.primaryTrack.displayTitle
                     )
-                    if let idx = issues.firstIndex(where: { $0.id == issueId }) {
+                    if Task.isCancelled || self.categoryRunGenerations[category] != gen { break }
+                    if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
                         if let artResult {
-                            issues[idx].proposedArtworkData = artResult.data
-                            issues[idx].proposedSummary = "Found \(artResult.dimensions) cover art (\(artResult.source))"
-                            issues[idx].fixFound = true
-                            issues[idx].statusNote = "Ready to save cover.jpg"
+                            self.issues[idx].proposedArtworkData = artResult.data
+                            self.issues[idx].proposedSummary = "Found \(artResult.dimensions) cover art (\(artResult.source))"
+                            self.issues[idx].fixFound = true
+                            self.issues[idx].statusNote = "Ready to save cover.jpg"
                         } else {
-                            issues[idx].statusNote = "No online artwork match found"
+                            self.issues[idx].statusNote = "No online artwork match found"
                         }
-                        issues[idx].isSearchingFix = false
+                        self.issues[idx].isSearchingFix = false
                     }
 
                 case .missingLyrics:
                     let res = await LRCLIBClient.shared.fetchLyrics(for: issue.primaryTrack)
-                    if let idx = issues.firstIndex(where: { $0.id == issueId }) {
-                        switch res {
-                        case .found(let lrc):
-                            issues[idx].proposedLyricsContent = lrc
-                            issues[idx].proposedSummary = "Found synced .lrc lyrics on LRCLIB"
-                            issues[idx].fixFound = true
-                            issues[idx].statusNote = "Ready to save .lrc"
-                        case .instrumental:
-                            issues[idx].proposedLyricsContent = "[audiofile:instrumental]"
-                            issues[idx].proposedSummary = "Verified Instrumental track on LRCLIB"
-                            issues[idx].fixFound = true
-                            issues[idx].statusNote = "Ready to mark Instrumental"
-                        case .notFound:
-                            issues[idx].statusNote = "No synced lyrics found on LRCLIB"
-                        }
-                        issues[idx].isSearchingFix = false
-                    }
+                    if Task.isCancelled || self.categoryRunGenerations[category] != gen { break }
+                    self.resolveMissingLyricsIssue(issueId: issueId, track: issue.primaryTrack, result: res)
 
                 default:
-                    if let idx = issues.firstIndex(where: { $0.id == issueId }) {
-                        issues[idx].isSearchingFix = false
+                    if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
+                        self.issues[idx].isSearchingFix = false
                     }
                 }
 
                 // Throttle to 1 query every 3 seconds when batch exceeds 20 items to prevent API rate-limiting
-                if requiresRateLimitThrottle && stepIdx + 1 < targetIds.count && !Task.isCancelled {
+                if requiresRateLimitThrottle && stepIdx + 1 < targetIds.count && !Task.isCancelled && self.categoryRunGenerations[category] == gen {
                     let elapsed = ContinuousClock.now - requestStart
                     if elapsed < .seconds(3) {
                         try? await Task.sleep(for: .seconds(3) - elapsed)
                     }
                 }
             }
+        }
+    }
 
-            progressText = ""
-            isFindingFixes = false
-            activeFindTask = nil
+    public func fetchLyrics(for issue: HealthIssue) {
+        guard !isRunning(.missingLyrics) else { return }
+        Task { @MainActor in
+            guard let idx = issues.firstIndex(where: { $0.id == issue.id }) else { return }
+            issues[idx].isSearchingFix = true
+            issues[idx].statusNote = nil
+            let res = await LRCLIBClient.shared.fetchLyrics(for: issue.primaryTrack)
+            resolveMissingLyricsIssue(issueId: issue.id, track: issue.primaryTrack, result: res)
+        }
+    }
+
+    private func resolveMissingLyricsIssue(issueId: String, track: Track, result: LyricsFetchResult) {
+        switch result {
+        case .found, .instrumental:
+            issues.removeAll { $0.id == issueId }
+            if AudioEngine.shared.currentTrack?.id == track.id && LyricsManager.shared.status == .notFound {
+                LyricsManager.shared.reloadLyrics(for: track)
+            }
+        case .notFound:
+            if let idx = issues.firstIndex(where: { $0.id == issueId }) {
+                issues[idx].statusNote = "No synced lyrics found on LRCLIB"
+                issues[idx].isSearchingFix = false
+            }
         }
     }
 
     public func runDynamicRangeBatchAnalysis(issuesToProcess: [HealthIssue]) async {
-        guard !isFindingFixes else { return }
-        isFindingFixes = true
+        guard !isRunning(.dynamicRange) else { return }
+        let total = issuesToProcess.count
+        guard total > 0 else { return }
 
-        let targetIssues = issuesToProcess.filter { !$0.fixFound }
-        let total = targetIssues.count
-        guard total > 0 else {
-            isFindingFixes = false
-            return
-        }
+        let gen = beginCategoryRun(for: .dynamicRange)
+        defer { finishCategoryRun(for: .dynamicRange, generation: gen) }
 
         var completed = 0
-        var batchScores: [String: Int] = [:]
         let concurrency = max(1, min(4, ProcessInfo.processInfo.activeProcessorCount))
 
-        await withTaskGroup(of: (String, Int?)?.self) { group in
-            var iterator = targetIssues.makeIterator()
+        await withTaskGroup(of: (String, String, Int?).self) { group in
+            var iterator = issuesToProcess.makeIterator()
+
+            @MainActor func enqueueNext() {
+                guard !Task.isCancelled, self.categoryRunGenerations[.dynamicRange] == gen, let next = iterator.next() else {
+                    return
+                }
+                if let idx = self.issues.firstIndex(where: { $0.id == next.id }) {
+                    self.issues[idx].isSearchingFix = true
+                    self.issues[idx].statusNote = nil
+                }
+                let track = next.primaryTrack
+                let issueId = next.id
+                group.addTask {
+                    let res = await DynamicRangeEngine.shared.dynamicRange(for: track)
+                    return (issueId, track.id, res?.score)
+                }
+            }
 
             for _ in 0..<concurrency {
-                if let next = iterator.next() {
-                    group.addTask {
-                        let res = await DynamicRangeEngine.shared.dynamicRange(for: next.primaryTrack)
-                        return (next.id, res?.score)
-                    }
-                }
+                enqueueNext()
             }
 
-            while let result = await group.next() {
-                if Task.isCancelled { break }
-                if let (issueId, score) = result {
-                    completed += 1
-                    if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
-                        let track = self.issues[idx].primaryTrack
-                        if let s = score {
-                            batchScores[track.id] = s
-                            let cat = DynamicRangeEngine.ratingCategory(for: s)
-                            self.issues[idx].fixFound = true
-                            self.issues[idx].statusNote = "DR\(s) (\(cat.rawValue))"
-                            self.issues[idx].proposedSummary = "Dynamic Range: DR\(s)"
-                        } else {
-                            self.issues[idx].statusNote = "Analysis failed"
-                        }
-                        self.progressText = "Measuring DR (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
-                    }
+            while let (issueId, trackId, score) = await group.next() {
+                if Task.isCancelled || self.categoryRunGenerations[.dynamicRange] != gen {
+                    group.cancelAll()
+                    break
+                }
+                completed += 1
+                if let track = self.issues.first(where: { $0.id == issueId })?.primaryTrack {
+                    self.categoryProgressText[.dynamicRange] = "Measuring DR (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
+                } else {
+                    self.categoryProgressText[.dynamicRange] = "Measuring DR (\(completed)/\(total))…"
                 }
 
-                if let next = iterator.next() {
-                    group.addTask {
-                        let res = await DynamicRangeEngine.shared.dynamicRange(for: next.primaryTrack)
-                        return (next.id, res?.score)
-                    }
+                if let s = score {
+                    LibraryManager.shared.updateTrackDynamicRange(id: trackId, score: s)
+                    self.issues.removeAll { $0.id == issueId }
+                } else if let idx = self.issues.firstIndex(where: { $0.id == issueId }) {
+                    self.issues[idx].statusNote = "Analysis failed"
+                    self.issues[idx].isSearchingFix = false
                 }
+
+                enqueueNext()
             }
         }
-
-        if !batchScores.isEmpty {
-            LibraryManager.shared.updateTracksDynamicRange(scores: batchScores)
-        }
-
-        progressText = ""
-        isFindingFixes = false
-        analyzeLibrary()
     }
 
     public func analyzeDynamicRange(for issue: HealthIssue) {
-        guard !isFindingFixes else { return }
+        guard !isRunning(.dynamicRange) else { return }
         Task { @MainActor in
-            if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
-                issues[idx].isSearchingFix = true
-                let res = await DynamicRangeEngine.shared.dynamicRange(for: issue.primaryTrack, forceRecalculate: true)
-                if let s = res?.score {
-                    LibraryManager.shared.updateTrackDynamicRange(id: issue.primaryTrack.id, score: s)
-                    let cat = DynamicRangeEngine.ratingCategory(for: s)
-                    issues[idx].fixFound = true
-                    issues[idx].statusNote = "DR\(s) (\(cat.rawValue))"
-                    issues[idx].proposedSummary = "Dynamic Range: DR\(s)"
-                }
-                issues[idx].isSearchingFix = false
-                analyzeLibrary()
+            guard let idx = issues.firstIndex(where: { $0.id == issue.id }) else { return }
+            issues[idx].isSearchingFix = true
+            issues[idx].statusNote = nil
+            let res = await DynamicRangeEngine.shared.dynamicRange(for: issue.primaryTrack, forceRecalculate: true)
+            if let s = res?.score {
+                LibraryManager.shared.updateTrackDynamicRange(id: issue.primaryTrack.id, score: s)
+                issues.removeAll { $0.id == issue.id }
+            } else if let currentIdx = issues.firstIndex(where: { $0.id == issue.id }) {
+                issues[currentIdx].statusNote = "Analysis failed"
+                issues[currentIdx].isSearchingFix = false
             }
         }
     }
 
     // MARK: - Lossless Spectral Audit (16k FFT Transcode Detection)
 
+    private func applyLosslessAuditResult(_ res: LosslessAuditResult, forPathKey key: String) {
+        if res.verdict == .verifiedLossless {
+            issues.removeAll {
+                $0.category == .fakeLossless && $0.primaryTrack.path.standardizedFileURL.path == key
+            }
+        } else {
+            for i in issues.indices {
+                let item = issues[i]
+                if item.category == .fakeLossless && item.primaryTrack.path.standardizedFileURL.path == key {
+                    issues[i] = Self.makeSuspectLosslessIssue(id: item.id, track: item.primaryTrack, audit: res)
+                }
+            }
+        }
+    }
+
     public func runLosslessAuditBatch(issuesToProcess: [HealthIssue]) async {
-        guard !isFindingFixes else { return }
-        isFindingFixes = true
+        guard !isRunning(.fakeLossless) else { return }
 
         // Deduplicate by backing audio file path so CUE image tracks share one FFT pass
         var uniqueByPath: [String: HealthIssue] = [:]
@@ -993,9 +1110,12 @@ public final class LibraryHealthManager: ObservableObject {
 
         let targetIssues = orderedKeys.compactMap { uniqueByPath[$0] }
         let total = targetIssues.count
-        guard total > 0 else {
-            isFindingFixes = false
-            return
+        guard total > 0 else { return }
+
+        let gen = beginCategoryRun(for: .fakeLossless)
+        defer {
+            saveLosslessAuditResults()
+            finishCategoryRun(for: .fakeLossless, generation: gen)
         }
 
         var completed = 0
@@ -1004,67 +1124,69 @@ public final class LibraryHealthManager: ObservableObject {
         await withTaskGroup(of: (String, LosslessAuditResult?).self) { group in
             var iterator = targetIssues.makeIterator()
 
-            for _ in 0..<concurrency {
-                if let next = iterator.next() {
-                    let track = next.primaryTrack
-                    let key = track.path.standardizedFileURL.path
-                    group.addTask {
-                        let result = await Task.detached(priority: .utility) {
-                            Self.performLosslessFFTAudit(for: track)
-                        }.value
-                        return (key, result)
-                    }
+            @MainActor func enqueueNext() {
+                guard !Task.isCancelled, self.categoryRunGenerations[.fakeLossless] == gen, let next = iterator.next() else {
+                    return
                 }
+                let track = next.primaryTrack
+                let key = track.path.standardizedFileURL.path
+                for i in self.issues.indices where self.issues[i].category == .fakeLossless && self.issues[i].primaryTrack.path.standardizedFileURL.path == key {
+                    self.issues[i].isSearchingFix = true
+                }
+                group.addTask {
+                    let result = await Task.detached(priority: .utility) {
+                        Self.performLosslessFFTAudit(for: track)
+                    }.value
+                    return (key, result)
+                }
+            }
+
+            for _ in 0..<concurrency {
+                enqueueNext()
             }
 
             while let (key, result) = await group.next() {
-                if Task.isCancelled { break }
+                if Task.isCancelled || self.categoryRunGenerations[.fakeLossless] != gen {
+                    group.cancelAll()
+                    break
+                }
                 completed += 1
                 if let res = result {
                     self.losslessAuditResults[key] = res
+                    self.applyLosslessAuditResult(res, forPathKey: key)
                     if completed % 15 == 0 {
                         self.saveLosslessAuditResults()
                     }
-                }
-                if let track = uniqueByPath[key]?.primaryTrack {
-                    self.progressText = "Auditing Lossless (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
-                }
-
-                if let next = iterator.next() {
-                    let track = next.primaryTrack
-                    let nextKey = track.path.standardizedFileURL.path
-                    group.addTask {
-                        let res = await Task.detached(priority: .utility) {
-                            Self.performLosslessFFTAudit(for: track)
-                        }.value
-                        return (nextKey, res)
+                } else {
+                    for i in self.issues.indices where self.issues[i].category == .fakeLossless && self.issues[i].primaryTrack.path.standardizedFileURL.path == key {
+                        self.issues[i].isSearchingFix = false
                     }
                 }
+                if let track = uniqueByPath[key]?.primaryTrack {
+                    self.categoryProgressText[.fakeLossless] = "Auditing Lossless (\(completed)/\(total)): \(track.displayArtist) - \(track.displayTitle)…"
+                }
+
+                enqueueNext()
             }
         }
-
-        saveLosslessAuditResults()
-        progressText = ""
-        isFindingFixes = false
-        analyzeLibrary()
     }
 
     public func analyzeSingleLosslessAudit(for issue: HealthIssue) {
-        guard !isFindingFixes else { return }
+        guard !isRunning(.fakeLossless) else { return }
         Task { @MainActor in
-            if let idx = issues.firstIndex(where: { $0.id == issue.id }) {
-                issues[idx].isSearchingFix = true
-                let track = issue.primaryTrack
-                let result = await Task.detached(priority: .utility) {
-                    Self.performLosslessFFTAudit(for: track)
-                }.value
-                if let res = result {
-                    let key = track.path.standardizedFileURL.path
-                    losslessAuditResults[key] = res
-                    saveLosslessAuditResults()
-                }
-                issues[idx].isSearchingFix = false
-                analyzeLibrary()
+            guard let idx = issues.firstIndex(where: { $0.id == issue.id }) else { return }
+            issues[idx].isSearchingFix = true
+            let track = issue.primaryTrack
+            let key = track.path.standardizedFileURL.path
+            let result = await Task.detached(priority: .utility) {
+                Self.performLosslessFFTAudit(for: track)
+            }.value
+            if let res = result {
+                losslessAuditResults[key] = res
+                saveLosslessAuditResults()
+                applyLosslessAuditResult(res, forPathKey: key)
+            } else if let currentIdx = issues.firstIndex(where: { $0.id == issue.id }) {
+                issues[currentIdx].isSearchingFix = false
             }
         }
     }
@@ -1222,25 +1344,30 @@ public final class LibraryHealthManager: ObservableObject {
     // MARK: - Approve & Apply Fixes
 
     public func approveIssue(_ issue: HealthIssue) {
+        guard issue.category.requiresApproval || issue.category == .fakeLossless else { return }
         Task { @MainActor in
             await applyIssueFix(issue)
-            analyzeLibrary()
+            if issue.category.requiresApproval {
+                analyzeLibrary()
+            }
         }
     }
 
     public func approveAllReady(for category: HealthIssueCategory) {
+        guard category.requiresApproval, !isRunning(category) else { return }
         let ready = issues(for: category).filter { $0.fixFound }
         guard !ready.isEmpty else { return }
 
-        Task { @MainActor in
-            isFindingFixes = true
+        let gen = beginCategoryRun(for: category)
+        activeCategoryTasks[category] = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.finishCategoryRun(for: category, generation: gen) }
             for (idx, issue) in ready.enumerated() {
-                progressText = "Applying \(category.rawValue) fix \(idx + 1) of \(ready.count)…"
-                await applyIssueFix(issue)
+                if Task.isCancelled || self.categoryRunGenerations[category] != gen { break }
+                self.categoryProgressText[category] = "Applying \(category.rawValue) fix \(idx + 1) of \(ready.count)…"
+                await self.applyIssueFix(issue)
             }
-            progressText = ""
-            isFindingFixes = false
-            analyzeLibrary()
+            self.analyzeLibrary()
         }
     }
 
@@ -1284,16 +1411,7 @@ public final class LibraryHealthManager: ObservableObject {
             saveOverrides()
             LibraryManager.shared.applyHealthOverrides(using: overrides)
 
-        case .missingLyrics:
-            guard let content = issue.proposedLyricsContent else { return }
-            if content != "[audiofile:instrumental]" {
-                let lrcURL = issue.primaryTrack.path.deletingPathExtension().appendingPathExtension("lrc")
-                try? content.write(to: lrcURL, atomically: true, encoding: .utf8)
-            }
-            ignoredIssueIds.insert(issue.id)
-            saveIgnoredIssues()
-
-        case .dynamicRange:
+        case .missingLyrics, .dynamicRange:
             break
 
         case .fakeLossless:

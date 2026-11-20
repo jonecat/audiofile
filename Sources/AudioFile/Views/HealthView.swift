@@ -53,7 +53,7 @@ public struct HealthView: View {
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
-                    .disabled(health.isAnalyzing || health.isFindingFixes)
+                    .disabled(health.isAnalyzing)
                     .help("Re-analyze library health")
                 }
 
@@ -95,8 +95,20 @@ public struct HealthView: View {
                             Text(health.progressText)
                                 .font(.system(size: 11, weight: .medium))
                                 .foregroundStyle(Color.accentColor)
+                        } else if !health.runningCategories.isEmpty {
+                            let activeNames = HealthIssueCategory.allCases
+                                .filter { health.isRunning($0) }
+                                .map(\.rawValue)
+                                .joined(separator: ", ")
+                            HStack(spacing: 6) {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                Text("Running: \(activeNames)")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundStyle(Color.accentColor)
+                            }
                         } else {
-                            Text("Select a section below to find fixes. You review and approve each item before any change is made.")
+                            Text("Select a section below to run checks or find fixes. Tag & artwork changes require approval; lyrics & DR apply automatically.")
                                 .font(.system(size: 11))
                                 .foregroundColor(.secondary.opacity(0.8))
                         }
@@ -110,6 +122,7 @@ public struct HealthView: View {
                     ForEach(HealthIssueCategory.allCases) { category in
                         let count = health.issues(for: category).count
                         let isSelected = (health.selectedCategory == category)
+                        let isCategoryRunning = health.isRunning(category)
 
                         Button {
                             health.selectedCategory = category
@@ -120,9 +133,14 @@ public struct HealthView: View {
                                         .font(.system(size: 20, weight: .bold, design: .rounded))
                                         .foregroundStyle(count > 0 ? Color.orange : Color.green)
                                     Spacer()
-                                    Image(systemName: category.systemImage)
-                                        .font(.system(size: 13))
-                                        .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                                    if isCategoryRunning {
+                                        ProgressView()
+                                            .controlSize(.mini)
+                                    } else {
+                                        Image(systemName: category.systemImage)
+                                            .font(.system(size: 13))
+                                            .foregroundStyle(isSelected ? Color.accentColor : Color.secondary)
+                                    }
                                 }
 
                                 Text(category.rawValue)
@@ -161,9 +179,11 @@ public struct HealthView: View {
             Divider()
 
             // Selected Section Header & Section-Specific Controls
-            let currentIssues = health.issues(for: health.selectedCategory)
+            let selectedCategory = health.selectedCategory
+            let currentIssues = health.issues(for: selectedCategory)
+            let isSelectedCategoryRunning = health.isRunning(selectedCategory)
             HStack(spacing: 12) {
-                Label(health.selectedCategory.rawValue, systemImage: health.selectedCategory.systemImage)
+                Label(selectedCategory.rawValue, systemImage: selectedCategory.systemImage)
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.secondary)
                     .textCase(.uppercase)
@@ -175,7 +195,7 @@ public struct HealthView: View {
                 Spacer()
 
                 // Show Safe Mode vs Write Tags to Audio Files ONLY for tag-modifying sections
-                if health.selectedCategory.usesTagWriteMode && !currentIssues.isEmpty {
+                if selectedCategory.usesTagWriteMode && !currentIssues.isEmpty {
                     HStack(spacing: 6) {
                         Text("Apply Mode:")
                             .font(.system(size: 11, weight: .medium))
@@ -195,19 +215,16 @@ public struct HealthView: View {
                 }
 
                 // Per-section "Find Fixes" / "Stop" button
-                if health.selectedCategory.supportsFindFixes && !currentIssues.isEmpty {
-                    let hasUnauditedLossless = health.selectedCategory != .fakeLossless || currentIssues.contains(where: { !$0.fixFound })
-                    if health.isFindingFixes {
+                if selectedCategory.supportsFindFixes && (!currentIssues.isEmpty || isSelectedCategoryRunning) {
+                    let hasUnauditedLossless = selectedCategory != .fakeLossless || currentIssues.contains(where: { !$0.fixFound })
+                    if isSelectedCategoryRunning {
                         Button {
-                            health.stopFindingFixes()
+                            health.stopFindingFixes(for: selectedCategory)
                         } label: {
                             HStack(spacing: 6) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text(
-                                    health.selectedCategory == .dynamicRange ? "Stop DR Analysis" :
-                                    (health.selectedCategory == .fakeLossless ? "Stop Lossless Audit" : "Stop Finding Fixes")
-                                )
+                                Text(stopButtonLabel(for: selectedCategory))
                                     .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
@@ -215,43 +232,34 @@ public struct HealthView: View {
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
-                        .help("Stop searching for fixes")
+                        .help("Stop \(selectedCategory.rawValue)")
                     } else if hasUnauditedLossless {
                         let unauditedLosslessCount = currentIssues.filter { !$0.fixFound }.count
                         Button {
-                            health.findFixes(for: health.selectedCategory)
+                            health.findFixes(for: selectedCategory)
                         } label: {
                             HStack(spacing: 6) {
-                                Image(systemName: health.selectedCategory.systemImage)
-                                Text(
-                                    health.selectedCategory == .dynamicRange
-                                        ? "Analyze All Missing DR (\(currentIssues.count))"
-                                        : (health.selectedCategory == .fakeLossless
-                                            ? "Audit All Lossless Files (\(unauditedLosslessCount))"
-                                            : "Find \(health.selectedCategory.rawValue) Fixes")
-                                )
-                                .font(.system(size: 12, weight: .semibold))
+                                Image(systemName: selectedCategory.systemImage)
+                                Text(startButtonLabel(for: selectedCategory, issueCount: currentIssues.count, unauditedLosslessCount: unauditedLosslessCount))
+                                    .font(.system(size: 12, weight: .semibold))
                             }
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
                         }
                         .buttonStyle(.glass)
                         .controlSize(.small)
-                        .help(
-                            health.selectedCategory == .dynamicRange ? "Measure Dynamic Range for all unanalyzed songs" :
-                            (health.selectedCategory == .fakeLossless ? "Inspect high-frequency FFT spectrum of all unaudited lossless files" : "Search for fixes in \(health.selectedCategory.rawValue)")
-                        )
+                        .help(startButtonHelp(for: selectedCategory))
                     }
                 }
 
-                // Per-section Bulk "Approve All Ready" button
+                // Per-section Bulk "Approve All Ready" button (only for categories requiring approval)
                 let readyCount = health.readyFixesInSelectedCategory.count
-                if readyCount > 0 {
+                if selectedCategory.requiresApproval && readyCount > 0 {
                     Button {
-                        health.approveAllReady(for: health.selectedCategory)
+                        health.approveAllReady(for: selectedCategory)
                     } label: {
                         Label(
-                            "Approve All \(health.selectedCategory.rawValue) (\(readyCount))",
+                            "Approve All \(selectedCategory.rawValue) (\(readyCount))",
                             systemImage: "checkmark.circle.fill"
                         )
                         .font(.system(size: 12, weight: .semibold))
@@ -260,14 +268,28 @@ public struct HealthView: View {
                     }
                     .buttonStyle(.glassProminent)
                     .controlSize(.small)
-                    .disabled(health.isFindingFixes)
-                    .help("Approve and apply all \(readyCount) ready fixes in \(health.selectedCategory.rawValue)")
+                    .disabled(isSelectedCategoryRunning)
+                    .help("Approve and apply all \(readyCount) ready fixes in \(selectedCategory.rawValue)")
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 10)
 
-            if health.selectedCategory == .dynamicRange {
+            if let sectionProgress = health.progressText(for: selectedCategory), !sectionProgress.isEmpty {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text(sectionProgress)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(Color.accentColor)
+                        .lineLimit(1)
+                    Spacer()
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 8)
+            }
+
+            if selectedCategory == .dynamicRange {
                 HStack(alignment: .center, spacing: 14) {
                     Image(systemName: "gauge.with.needle.fill")
                         .font(.system(size: 24))
@@ -276,7 +298,7 @@ public struct HealthView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text("Dynamic Range Analysis (Pleasurize Music Foundation TT DR Meter)")
                             .font(.system(size: 13, weight: .semibold))
-                        Text("Measures official TT DR dynamic range ratings (DR1–DR20+) using SIMD peak-to-RMS windowing. Because full audio decoding is required, this is an opt-in scan.")
+                        Text("Measures official TT DR dynamic range ratings (DR1–DR20+) using SIMD peak-to-RMS windowing. Scores are saved automatically to your library without modifying audio files.")
                             .font(.system(size: 11))
                             .foregroundColor(.secondary)
                     }
@@ -369,6 +391,45 @@ public struct HealthView: View {
         guard let date = health.lastCheckedDate else { return "just now" }
         return Self.timeFormatter.string(from: date)
     }
+
+    private func stopButtonLabel(for category: HealthIssueCategory) -> String {
+        switch category {
+        case .dynamicRange:
+            return "Stop DR Analysis"
+        case .fakeLossless:
+            return "Stop Lossless Audit"
+        case .missingLyrics:
+            return "Stop Fetching Lyrics"
+        default:
+            return "Stop Finding Fixes"
+        }
+    }
+
+    private func startButtonLabel(for category: HealthIssueCategory, issueCount: Int, unauditedLosslessCount: Int) -> String {
+        switch category {
+        case .dynamicRange:
+            return "Analyze All Missing DR (\(issueCount))"
+        case .fakeLossless:
+            return "Audit All Lossless Files (\(unauditedLosslessCount))"
+        case .missingLyrics:
+            return "Fetch All Missing Lyrics (\(issueCount))"
+        default:
+            return "Find \(category.rawValue) Fixes"
+        }
+    }
+
+    private func startButtonHelp(for category: HealthIssueCategory) -> String {
+        switch category {
+        case .dynamicRange:
+            return "Measure Dynamic Range for all unanalyzed songs"
+        case .fakeLossless:
+            return "Inspect high-frequency FFT spectrum of all unaudited lossless files"
+        case .missingLyrics:
+            return "Search LRCLIB and cache synced lyrics for all missing tracks"
+        default:
+            return "Search for fixes in \(category.rawValue)"
+        }
+    }
 }
 
 private struct HealthIssueRowView: View {
@@ -445,7 +506,10 @@ private struct HealthIssueRowView: View {
                 }
 
                 HStack(spacing: 6) {
-                    Text(issue.category == .fakeLossless && issue.fixFound ? "Finding:" : "Proposed:")
+                    let actionLabel = (issue.category == .fakeLossless && issue.fixFound)
+                        ? "Finding:"
+                        : (issue.category.requiresApproval ? "Proposed:" : "Action:")
+                    Text(actionLabel)
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(issue.category == .fakeLossless && issue.fixFound ? Color.red : (issue.fixFound ? Color.green : Color.secondary))
                     Text(issue.proposedSummary)
@@ -483,7 +547,20 @@ private struct HealthIssueRowView: View {
                     .help("Customize tags before approving")
                 }
 
-                if issue.category == .dynamicRange && !issue.fixFound {
+                if issue.category == .missingLyrics {
+                    Button {
+                        health.fetchLyrics(for: issue)
+                    } label: {
+                        Label("Fetch Lyrics", systemImage: "quote.bubble")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.glass)
+                    .controlSize(.small)
+                    .disabled(issue.isSearchingFix || health.isRunning(.missingLyrics))
+                    .help("Fetch and cache synced lyrics from LRCLIB")
+                }
+
+                if issue.category == .dynamicRange {
                     Button {
                         health.analyzeDynamicRange(for: issue)
                     } label: {
@@ -492,7 +569,7 @@ private struct HealthIssueRowView: View {
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
-                    .disabled(issue.isSearchingFix || health.isFindingFixes)
+                    .disabled(issue.isSearchingFix || health.isRunning(.dynamicRange))
                     .help("Measure Dynamic Range for this song")
                 }
 
@@ -505,23 +582,33 @@ private struct HealthIssueRowView: View {
                     }
                     .buttonStyle(.glass)
                     .controlSize(.small)
-                    .disabled(issue.isSearchingFix || health.isFindingFixes)
+                    .disabled(issue.isSearchingFix || health.isRunning(.fakeLossless))
                     .help("Inspect high-frequency FFT spectrum for this song")
                 }
 
-                Button {
-                    health.approveIssue(issue)
-                } label: {
-                    Label(
-                        issue.category == .fakeLossless ? "Reveal" : "Approve",
-                        systemImage: issue.category == .fakeLossless ? "folder" : "checkmark"
-                    )
-                    .font(.system(size: 11, weight: .semibold))
+                if issue.category.requiresApproval {
+                    Button {
+                        health.approveIssue(issue)
+                    } label: {
+                        Label("Approve", systemImage: "checkmark")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
+                    .disabled(!issue.fixFound || health.isRunning(issue.category))
+                    .help("Approve and apply this fix")
+                } else if issue.category == .fakeLossless {
+                    Button {
+                        health.approveIssue(issue)
+                    } label: {
+                        Label("Reveal", systemImage: "folder")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.small)
+                    .disabled(!issue.fixFound)
+                    .help("Reveal suspect file in Finder")
                 }
-                .buttonStyle(.glassProminent)
-                .controlSize(.small)
-                .disabled(!issue.fixFound)
-                .help(issue.category == .fakeLossless ? "Reveal suspect file in Finder" : "Approve and apply this fix")
 
                 Button {
                     health.ignoreIssue(issue)
