@@ -1,21 +1,68 @@
 import SwiftUI
+import Combine
+
+@MainActor
+private final class AlbumsGridScrollState: ObservableObject {
+    let objectWillChange = ObservableObjectPublisher()
+    var scrollPosition: ScrollPosition
+    var isTrackingScroll: Bool
+
+    var binding: Binding<ScrollPosition> {
+        Binding(
+            get: { self.scrollPosition },
+            set: { self.scrollPosition = $0 }
+        )
+    }
+
+    init(vm: PlayerViewModel) {
+        let hasSavedOffset = (vm.albumsGridScrollSortMode == vm.albumSortMode && vm.albumsGridScrollOffsetY > 0)
+        self.scrollPosition = hasSavedOffset
+            ? ScrollPosition(y: vm.albumsGridScrollOffsetY)
+            : ScrollPosition(edge: .top)
+        self.isTrackingScroll = !hasSavedOffset
+    }
+
+    func scrollTo(y: CGFloat) {
+        objectWillChange.send()
+        scrollPosition.scrollTo(y: y)
+    }
+
+    func scrollToTop() {
+        objectWillChange.send()
+        scrollPosition.scrollTo(edge: .top)
+    }
+}
 
 public struct AlbumsView: View {
     @ObservedObject var vm: PlayerViewModel
+    @StateObject private var scrollState: AlbumsGridScrollState
 
     private let columns = [
         GridItem(.adaptive(minimum: 160, maximum: 200), spacing: 20)
     ]
 
+    public init(vm: PlayerViewModel) {
+        self.vm = vm
+        _scrollState = StateObject(wrappedValue: AlbumsGridScrollState(vm: vm))
+    }
+
     public var body: some View {
-        if let album = vm.selectedAlbumDetail {
-            AlbumDetailView(vm: vm, album: album)
-        } else {
-            allAlbumsGrid
+        let showingDetail = (vm.selectedAlbumDetail != nil)
+
+        ZStack {
+            allAlbumsGrid(showingDetail: showingDetail)
+                .opacity(showingDetail ? 0 : 1)
+                .allowsHitTesting(!showingDetail)
+                .disabled(showingDetail)
+                .accessibilityHidden(showingDetail)
+
+            if let album = vm.selectedAlbumDetail {
+                AlbumDetailView(vm: vm, album: album)
+            }
         }
     }
 
-    private var allAlbumsGrid: some View {
+    private func allAlbumsGrid(showingDetail: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             // Top Header & Sort Control
             HStack(spacing: 12) {
@@ -132,7 +179,40 @@ public struct AlbumsView: View {
                 .id(vm.albumSortMode)
                 .padding(24)
             }
+            .scrollPosition(scrollState.binding)
+            .scrollDisabled(showingDetail)
+            .scrollIndicators(showingDetail ? .never : .automatic)
             .defaultScrollAnchor(.top)
+            .onScrollPhaseChange { _, newPhase in
+                if newPhase.isScrolling && !showingDetail {
+                    scrollState.isTrackingScroll = true
+                }
+            }
+            .onScrollGeometryChange(for: CGFloat.self) { geo in
+                max(0, geo.contentOffset.y + geo.contentInsets.top)
+            } action: { _, newY in
+                guard !showingDetail, scrollState.isTrackingScroll else { return }
+                vm.albumsGridScrollOffsetY = newY
+                vm.albumsGridScrollSortMode = vm.albumSortMode
+            }
+            .task(id: showingDetail) {
+                guard !showingDetail, !scrollState.isTrackingScroll else { return }
+                let targetY = vm.albumsGridScrollOffsetY
+                if vm.albumsGridScrollSortMode == vm.albumSortMode, targetY > 0 {
+                    await Task.yield()
+                    guard !Task.isCancelled, vm.selectedAlbumDetail == nil, !scrollState.isTrackingScroll else { return }
+                    scrollState.scrollTo(y: targetY)
+                    await Task.yield()
+                }
+                guard !Task.isCancelled else { return }
+                scrollState.isTrackingScroll = true
+            }
+            .onChange(of: vm.albumSortMode) { _, newMode in
+                vm.albumsGridScrollOffsetY = 0
+                vm.albumsGridScrollSortMode = newMode
+                scrollState.isTrackingScroll = true
+                scrollState.scrollToTop()
+            }
         }
     }
 }

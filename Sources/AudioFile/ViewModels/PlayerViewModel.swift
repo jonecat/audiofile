@@ -165,6 +165,9 @@ public final class PlayerViewModel: ObservableObject {
     @Published public var selectedArtist: String?
     @Published public var selectedAlbum: String?
     @Published public var selectedAlbumDetail: LibraryManager.AlbumInfo?
+    // Preserved Albums grid scroll state (non-@Published to avoid per-frame view updates while scrolling)
+    public var albumsGridScrollOffsetY: CGFloat = 0
+    public var albumsGridScrollSortMode: AlbumSortMode = .artist
     @Published public var selectedTrackIds: Set<String> = []
 
     public var selectedTrackId: String? {
