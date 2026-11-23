@@ -58,19 +58,7 @@ public actor OpticalDiscMetadataService {
     ) async -> DiscMetadataResult {
         var result = DiscMetadataResult()
 
-        // 1. Check CD-Text first
-        let cdText = await readCDText()
-        if let cdTitle = cdText.albumTitle, !cdTitle.isEmpty {
-            result.title = cdTitle
-        }
-        if let cdArtist = cdText.albumArtist, !cdArtist.isEmpty {
-            result.artist = cdArtist
-        }
-        for (num, title) in cdText.trackTitles {
-            result.trackTitles[num] = title
-        }
-
-        // 2. Query MusicBrainz by DiscID
+        // 1. Query MusicBrainz by DiscID
         let mbResult = await queryMusicBrainz(discID: discID, trackOffsets: trackOffsets, leadoutSector: leadoutSector)
         if let mb = mbResult {
             if !mb.title.isEmpty { result.title = mb.title }
@@ -87,7 +75,7 @@ public actor OpticalDiscMetadataService {
             }
         }
 
-        // 3. Fallbacks if still untitled
+        // 2. Fallbacks if still untitled
         if result.title.isEmpty, let fTitle = fallbackTitle, !fTitle.isEmpty {
             result.title = fTitle
         }
@@ -95,7 +83,7 @@ public actor OpticalDiscMetadataService {
             result.artist = fArtist
         }
 
-        // 4. Fetch High-Resolution Album Artwork
+        // 3. Fetch High-Resolution Album Artwork
         // First try Cover Art Archive via MBID, then fallback to iTunes Search API (1400x1400)
         if let mbid = result.mbid {
             if let caaData = await fetchCoverArtArchive(mbid: mbid) {
@@ -264,60 +252,5 @@ public actor OpticalDiscMetadataService {
         }
 
         return (artData, artURL)
-    }
-
-    // MARK: - CD-Text Reader
-
-    public struct CDTextData: Sendable {
-        public var albumTitle: String?
-        public var albumArtist: String?
-        public var trackTitles: [Int: String] = [:]
-    }
-
-    private func readCDText() async -> CDTextData {
-        var data = CDTextData()
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/drutil")
-        proc.arguments = ["cdtext"]
-        let pipe = Pipe()
-        proc.standardOutput = pipe
-        proc.standardError = Pipe()
-
-        do {
-            try proc.run()
-            proc.waitUntilExit()
-            let outputData = pipe.fileHandleForReading.readDataToEndOfFile()
-            guard let text = String(data: outputData, encoding: .utf8), !text.isEmpty else {
-                return data
-            }
-
-            var currentTrackNum: Int? = nil
-            for line in text.components(separatedBy: .newlines) {
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("Title:") {
-                    let val = trimmed.dropFirst("Title:".count).trimmingCharacters(in: .whitespaces)
-                    if let track = currentTrackNum {
-                        data.trackTitles[track] = val
-                    } else if data.albumTitle == nil {
-                        data.albumTitle = val
-                    }
-                } else if trimmed.hasPrefix("Performer:") {
-                    let val = trimmed.dropFirst("Performer:".count).trimmingCharacters(in: .whitespaces)
-                    if currentTrackNum == nil && data.albumArtist == nil {
-                        data.albumArtist = val
-                    }
-                } else if trimmed.hasPrefix("Track") {
-                    let parts = trimmed.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { !$0.isEmpty }
-                    if let first = parts.first, let num = Int(first) {
-                        currentTrackNum = num
-                    }
-                }
-            }
-        } catch {
-            // Ignore if drutil cdtext is unavailable or unsupported
-        }
-
-        return data
     }
 }

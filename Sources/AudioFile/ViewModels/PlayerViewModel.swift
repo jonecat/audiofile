@@ -384,14 +384,19 @@ public final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
+        var previousOpticalDiscID: String? = nil
         opticalDiscManager.$detectedDisc
             .receive(on: RunLoop.main)
             .sink { [weak self] disc in
                 guard let self = self else { return }
                 if let d = disc {
-                    let discName = d.title.isEmpty ? "Audio CD" : d.title
-                    self.showToast(icon: "opticaldisc", message: "Audio CD Detected: \(discName)")
-                } else {
+                    if d.id != previousOpticalDiscID {
+                        previousOpticalDiscID = d.id
+                        let discName = d.title.isEmpty ? "Audio CD" : d.title
+                        self.showToast(icon: "opticaldisc", message: "Audio CD Detected: \(discName)")
+                    }
+                } else if previousOpticalDiscID != nil {
+                    previousOpticalDiscID = nil
                     if self.selectedSection == .opticalDisc {
                         self.selectedSection = .songs
                     }
