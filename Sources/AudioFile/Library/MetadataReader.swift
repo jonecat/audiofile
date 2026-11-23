@@ -121,6 +121,7 @@ public struct MetadataReader: Sendable {
             albumArtist = decodedMeta.albumArtist
             genre = decodedMeta.genre
             year = decodedMeta.year
+            releaseDate = decodedMeta.releaseDate
             trackNumber = decodedMeta.trackNumber
             discNumber = decodedMeta.discNumber
             duration = decodedMeta.duration
@@ -163,6 +164,10 @@ public struct MetadataReader: Sendable {
         if bitrate == nil, duration > 0, let size = fileSize {
             bitrate = Int((Double(size * 8) / duration) / 1000.0)
         }
+
+        var primaryParsedDate: ParsedReleaseDate? = ParsedReleaseDate.parse(releaseDate, fallbackYear: year)
+        var fallbackParsedDate: ParsedReleaseDate? = nil
+        var id3TDAT: String? = nil
 
         if let metadata = try? await asset.load(.metadata) {
             for item in metadata {
@@ -218,6 +223,30 @@ public struct MetadataReader: Sendable {
                 let isId = !valueStr.isEmpty && UUID(uuidString: valueStr) != nil
 
                 if !valueStr.isEmpty && !isId {
+                    let isPrimaryDateTag = item.commonKey == .commonKeyCreationDate
+                        || item.identifier == .iTunesMetadataReleaseDate
+                        || item.identifier == .id3MetadataRecordingTime
+                        || item.identifier == .id3MetadataYear
+                        || item.identifier == .id3MetadataReleaseTime
+                        || idStr.hasSuffix("/TDRC")
+                        || idStr.hasSuffix("/TYER")
+                        || idStr.hasSuffix("/TDRL")
+                        || keyStr == "DATE"
+                        || keyStr == "YEAR"
+                        || keyStr == "TDRC"
+                        || keyStr == "TYER"
+                        || keyStr == "TDRL"
+                        || keyStr == "RELEASEDATE"
+                        || keyStr == "RELEASE DATE"
+
+                    let isFallbackDateTag = item.identifier == .id3MetadataOriginalReleaseTime
+                        || idStr.hasSuffix("/TDOR")
+                        || keyStr == "ORIGINALDATE"
+                        || keyStr == "ORIGINALYEAR"
+                        || keyStr == "TDOR"
+
+                    let isTDATTag = idStr.hasSuffix("/TDAT") || keyStr == "TDAT"
+
                     if (item.commonKey == .commonKeyTitle || keyStr == "TITLE" || keyStr == "TRACK_TITLE") && title.isEmpty {
                         title = valueStr
                     } else if (item.commonKey == .commonKeyArtist || keyStr == "ARTIST" || keyStr == "AUTHOR" || keyStr == "PERFORMER") && artist.isEmpty {
@@ -228,11 +257,18 @@ public struct MetadataReader: Sendable {
                         albumArtist = valueStr
                     } else if (item.commonKey == .commonKeyType || keyStr == "GENRE") && genre == nil {
                         genre = valueStr
-                    } else if (item.commonKey == .commonKeyCreationDate || item.identifier == .iTunesMetadataReleaseDate || keyStr == "DATE" || keyStr == "YEAR" || keyStr == "ORIGINALDATE" || keyStr == "ORIGINALYEAR") && releaseDate == nil {
-                        releaseDate = valueStr
-                        if let y = extractYear(from: valueStr) {
-                            year = y
+                    } else if isPrimaryDateTag {
+                        if let parsed = ParsedReleaseDate.parse(valueStr),
+                           primaryParsedDate == nil || parsed.specificity > primaryParsedDate!.specificity {
+                            primaryParsedDate = parsed
                         }
+                    } else if isFallbackDateTag {
+                        if let parsed = ParsedReleaseDate.parse(valueStr),
+                           fallbackParsedDate == nil || parsed.specificity > fallbackParsedDate!.specificity {
+                            fallbackParsedDate = parsed
+                        }
+                    } else if isTDATTag, id3TDAT == nil {
+                        id3TDAT = valueStr
                     }
                 }
 
@@ -241,6 +277,24 @@ public struct MetadataReader: Sendable {
                     hasCoverArt = true
                 }
             }
+        }
+
+        var bestDate = primaryParsedDate
+        if bestDate == nil {
+            bestDate = fallbackParsedDate
+        } else if let primary = bestDate, primary.specificity == 1,
+                  let fallback = fallbackParsedDate, fallback.specificity > 1, fallback.year == primary.year {
+            bestDate = fallback
+        }
+        if let d = bestDate, d.month == nil,
+           let tdat = id3TDAT, tdat.count == 4, tdat.allSatisfy(\.isNumber),
+           let dd = Int(tdat.prefix(2)), let mm = Int(tdat.suffix(2)),
+           (1...12).contains(mm), (1...31).contains(dd) {
+            bestDate = ParsedReleaseDate(year: d.year, month: mm, day: dd)
+        }
+        if let bestDate {
+            releaseDate = bestDate.formattedString
+            year = bestDate.year
         }
 
         // Fallback track / disc number from filename prefix (e.g. "03 Blue Jeans.m4a" or "1-03 Song.m4a")
@@ -487,14 +541,6 @@ public struct MetadataReader: Sendable {
         case "dsf", "dff", "dsd": return "DSD"
         default: return ext.uppercased()
         }
-    }
-
-    private static func extractYear(from str: String) -> Int? {
-        let components = str.components(separatedBy: CharacterSet.decimalDigits.inverted).filter { $0.count == 4 }
-        if let first = components.first, let y = Int(first) {
-            return y
-        }
-        return nil
     }
 
     private static func extractNumber(from str: String) -> Int? {

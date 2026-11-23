@@ -169,7 +169,7 @@ public struct ArtistsView: View {
                 let albumList = albums(for: artist)
                 List(albumList, id: \.self, selection: $vm.selectedAlbum) { album in
                     let songs = vm.library.tracks(for: artist, album: album)
-                    let year = vm.library.albumYear(for: artist, album: album)
+                    let releaseDate = vm.library.albumReleaseDate(for: artist, album: album)
                     HStack(spacing: 10) {
                         ArtworkView(track: songs.first, cornerRadius: 5, shadowRadius: 0, maxPixelSize: 64)
                             .frame(width: 32, height: 32)
@@ -179,8 +179,8 @@ public struct ArtistsView: View {
                                 .font(.system(size: 13))
                                 .lineLimit(1)
 
-                            if let year {
-                                Text(String(year))
+                            if let releaseDate {
+                                Text(releaseDate)
                                     .font(.system(size: 11))
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)

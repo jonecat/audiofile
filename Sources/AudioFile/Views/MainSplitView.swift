@@ -67,7 +67,7 @@ public struct MainSplitView: View {
         .sheet(
             isPresented: Binding(
                 get: { vm.inspectingTrack != nil },
-                set: { if !$0 { vm.inspectingTrack = nil } }
+                set: { if !$0 { vm.endInspectingMetadata() } }
             )
         ) {
             if let track = vm.inspectingTrack {

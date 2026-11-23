@@ -303,14 +303,15 @@ public struct SearchResultsView: View {
                             }
 
                             HStack(spacing: 4) {
-                                if let y = album.year {
-                                    Text(String(y))
+                                if let dateStr = album.formattedReleaseDate {
+                                    Text(dateStr)
                                     Text("•")
                                 }
                                 Text("\(album.trackCount) songs")
                             }
                             .font(.system(size: 10))
                             .foregroundColor(.secondary.opacity(0.8))
+                            .lineLimit(1)
                         }
                     }
                     .contextMenu {

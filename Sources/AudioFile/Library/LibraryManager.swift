@@ -21,6 +21,7 @@ public final class LibraryManager: ObservableObject {
     public private(set) var tracksById: [String: Track] = [:]
     private var albumsByArtistMap: [String: [String]] = [:]
     private var albumYearByArtistAndAlbumMap: [String: Int] = [:]
+    private var albumReleaseDateByArtistAndAlbumMap: [String: ParsedReleaseDate] = [:]
     private var tracksByArtistMap: [String: [Track]] = [:]
     private var tracksByArtistAndAlbumMap: [String: [Track]] = [:]
     private var trackCountByArtistMap: [String: Int] = [:]
@@ -63,6 +64,9 @@ public final class LibraryManager: ObservableObject {
             }
             if a.displayArtist != b.displayArtist {
                 return a.displayArtist.localizedCaseInsensitiveCompare(b.displayArtist) == .orderedAscending
+            }
+            if a.releaseDateSortKey != b.releaseDateSortKey {
+                return a.releaseDateSortKey < b.releaseDateSortKey
             }
             if a.albumSortKey != b.albumSortKey {
                 return a.albumSortKey < b.albumSortKey
@@ -557,21 +561,9 @@ public final class LibraryManager: ObservableObject {
         albumYearByArtistAndAlbumMap["\(artist)\0\(album)"]
     }
 
-    private static func compareAlbumYears(_ a: Int?, _ b: Int?) -> ComparisonResult {
-        let yearA = a.flatMap { $0 > 0 ? $0 : nil }
-        let yearB = b.flatMap { $0 > 0 ? $0 : nil }
-        switch (yearA, yearB) {
-        case let (yA?, yB?):
-            if yA < yB { return .orderedAscending }
-            if yA > yB { return .orderedDescending }
-            return .orderedSame
-        case (.some, .none):
-            return .orderedAscending
-        case (.none, .some):
-            return .orderedDescending
-        case (.none, .none):
-            return .orderedSame
-        }
+    public func albumReleaseDate(for artist: String, album: String) -> String? {
+        albumReleaseDateByArtistAndAlbumMap["\(artist)\0\(album)"]?.formattedString
+            ?? albumYearByArtistAndAlbumMap["\(artist)\0\(album)"].map { String($0) }
     }
 
     public func tracks(for artist: String, album: String? = nil) -> [Track] {
@@ -586,8 +578,14 @@ public final class LibraryManager: ObservableObject {
         public let title: String
         public let artist: String
         public let year: Int?
+        public let releaseDate: String?
+        public let parsedReleaseDate: ParsedReleaseDate?
         public let trackCount: Int
         public let sampleTrack: Track
+
+        public var formattedReleaseDate: String? {
+            parsedReleaseDate?.formattedString ?? year.map { String($0) }
+        }
     }
 
     public func rebuildIndexes() {
@@ -639,26 +637,30 @@ public final class LibraryManager: ObservableObject {
 
         var albumYearByArtistAndAlbum: [String: Int] = [:]
         albumYearByArtistAndAlbum.reserveCapacity(artistAlbumTracks.count)
+        var albumReleaseDateByArtistAndAlbum: [String: ParsedReleaseDate] = [:]
+        albumReleaseDateByArtistAndAlbum.reserveCapacity(artistAlbumTracks.count)
         for (key, list) in artistAlbumTracks {
             let sorted = list.sorted(by: albumTrackSort)
             artistAlbumTracks[key] = sorted
-            if let year = sorted.compactMap(\.year).first(where: { $0 > 0 }) {
-                albumYearByArtistAndAlbum[key] = year
+            if let bestDate = ParsedReleaseDate.best(from: sorted.compactMap(\.parsedReleaseDate)) {
+                albumReleaseDateByArtistAndAlbum[key] = bestDate
+                albumYearByArtistAndAlbum[key] = bestDate.year
             }
         }
         self.tracksByArtistAndAlbumMap = artistAlbumTracks
         self.albumYearByArtistAndAlbumMap = albumYearByArtistAndAlbum
+        self.albumReleaseDateByArtistAndAlbumMap = albumReleaseDateByArtistAndAlbum
 
         var sortedAlbumsByArtist: [String: [String]] = [:]
         sortedAlbumsByArtist.reserveCapacity(artistAlbumsSet.count)
         for (artist, albumSet) in artistAlbumsSet {
             sortedAlbumsByArtist[artist] = albumSet.sorted { albumA, albumB in
-                let yearCmp = Self.compareAlbumYears(
-                    albumYearByArtistAndAlbum["\(artist)\0\(albumA)"],
-                    albumYearByArtistAndAlbum["\(artist)\0\(albumB)"]
+                let dateCmp = ParsedReleaseDate.compare(
+                    albumReleaseDateByArtistAndAlbum["\(artist)\0\(albumA)"],
+                    albumReleaseDateByArtistAndAlbum["\(artist)\0\(albumB)"]
                 )
-                if yearCmp != .orderedSame {
-                    return yearCmp == .orderedAscending
+                if dateCmp != .orderedSame {
+                    return dateCmp == .orderedAscending
                 }
                 let titleCmp = albumA.localizedCaseInsensitiveCompare(albumB)
                 if titleCmp != .orderedSame {
@@ -693,11 +695,13 @@ public final class LibraryManager: ObservableObject {
             let title = first.displayAlbum
             let rawArtist = first.displayAlbumArtist
             let artist = (UUID(uuidString: rawArtist) != nil) ? first.displayArtist : rawArtist
-            let year = trackList.compactMap(\.year).first(where: { $0 > 0 })
+            let bestDate = ParsedReleaseDate.best(from: trackList.compactMap(\.parsedReleaseDate))
             albumList.append(AlbumInfo(
                 title: title,
                 artist: artist,
-                year: year,
+                year: bestDate?.year,
+                releaseDate: bestDate?.formattedString,
+                parsedReleaseDate: bestDate,
                 trackCount: trackList.count,
                 sampleTrack: first
             ))
@@ -706,6 +710,10 @@ public final class LibraryManager: ObservableObject {
         self.allAlbums = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
             if a.artist != b.artist {
                 return Self.compareArtists(a.artist, b.artist)
+            }
+            let dateCmp = ParsedReleaseDate.compare(a.parsedReleaseDate, b.parsedReleaseDate)
+            if dateCmp != .orderedSame {
+                return dateCmp == .orderedAscending
             }
             return a.title.localizedCaseInsensitiveCompare(b.title) == .orderedAscending
         }
@@ -719,9 +727,9 @@ public final class LibraryManager: ObservableObject {
         }
 
         self.allAlbumsByYear = albumList.sorted { (a: AlbumInfo, b: AlbumInfo) -> Bool in
-            let yearCmp = Self.compareAlbumYears(a.year, b.year)
-            if yearCmp != .orderedSame {
-                return yearCmp == .orderedAscending
+            let dateCmp = ParsedReleaseDate.compare(a.parsedReleaseDate, b.parsedReleaseDate)
+            if dateCmp != .orderedSame {
+                return dateCmp == .orderedAscending
             }
             if a.artist != b.artist {
                 return Self.compareArtists(a.artist, b.artist)

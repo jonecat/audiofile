@@ -52,7 +52,7 @@ public enum SearchCategoryFilter: String, CaseIterable, Identifiable, Sendable {
 public enum AlbumSortMode: String, CaseIterable, Identifiable, Sendable {
     case artist = "Artist"
     case album = "Album"
-    case year = "Year"
+    case year = "Date"
 
     public var id: String { rawValue }
 }
@@ -203,6 +203,10 @@ public final class PlayerViewModel: ObservableObject {
     // Track Metadata Inspector & Editor state
     @Published public var inspectingTrack: Track?
     @Published public var inspectingArtworkTrack: Track?
+    @Published public var inspectedTrackTagReport: FullTrackTagReport? = nil
+    @Published public var isLoadingInspectedTags: Bool = false
+    @Published public var metaTagFilterQuery: String = ""
+    private var inspectTagsTask: Task<Void, Never>?
     @Published public var metaTitle: String = ""
     @Published public var metaArtist: String = ""
     @Published public var metaAlbum: String = ""
@@ -1203,6 +1207,9 @@ public final class PlayerViewModel: ObservableObject {
     // MARK: - Track Metadata Inspector & Editor
 
     public func beginInspectingMetadata(for track: Track) {
+        inspectTagsTask?.cancel()
+        inspectTagsTask = nil
+
         let current = library.tracks.first(where: { $0.id == track.id }) ?? track
         metaTitle = current.displayTitle
         metaArtist = current.artist == "Unknown Artist" ? "" : current.displayArtist
@@ -1211,16 +1218,47 @@ public final class PlayerViewModel: ObservableObject {
         metaGenre = current.genre ?? ""
         metaTrackNumber = current.trackNumber.map { String($0) } ?? ""
         metaDiscNumber = current.discNumber.map { String($0) } ?? ""
-        metaYear = current.year.map { String($0) } ?? ""
+        metaYear = current.formattedReleaseDate ?? ""
         metaSaveMode = health.fixMode
+        metaTagFilterQuery = ""
+        inspectedTrackTagReport = nil
         isSavingTrackMetadata = false
         inspectingTrack = current
+
+        if current.id.hasPrefix("optical_") || current.format.uppercased() == "CDDA" {
+            isLoadingInspectedTags = false
+            inspectedTrackTagReport = FullTrackTagReport(sections: [])
+            return
+        }
+
+        isLoadingInspectedTags = true
+        inspectTagsTask = Task { @MainActor [weak self] in
+            let report = await FullTagReader.readAllTags(for: current.path)
+            guard let self = self,
+                  !Task.isCancelled,
+                  self.inspectingTrack?.id == current.id else {
+                return
+            }
+            self.inspectedTrackTagReport = report
+            self.isLoadingInspectedTags = false
+        }
+    }
+
+    public func endInspectingMetadata() {
+        inspectTagsTask?.cancel()
+        inspectTagsTask = nil
+        inspectingTrack = nil
+        inspectedTrackTagReport = nil
+        isLoadingInspectedTags = false
+        metaTagFilterQuery = ""
     }
 
     public func saveInspectedTrackMetadata() {
         guard let track = inspectingTrack else { return }
         isSavingTrackMetadata = true
 
+        let trimmedDate = metaYear.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedDate = ParsedReleaseDate.parse(trimmedDate)
         let override = TrackMetadataOverride(
             title: metaTitle.trimmingCharacters(in: .whitespacesAndNewlines),
             artist: metaArtist.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -1228,7 +1266,8 @@ public final class PlayerViewModel: ObservableObject {
             albumArtist: metaAlbumArtist.trimmingCharacters(in: .whitespacesAndNewlines),
             trackNumber: Int(metaTrackNumber.trimmingCharacters(in: .whitespaces)),
             discNumber: Int(metaDiscNumber.trimmingCharacters(in: .whitespaces)),
-            year: Int(metaYear.trimmingCharacters(in: .whitespaces)),
+            year: parsedDate?.year,
+            releaseDate: parsedDate?.formattedString ?? (trimmedDate.isEmpty ? nil : trimmedDate),
             genre: metaGenre.trimmingCharacters(in: .whitespacesAndNewlines)
         )
 
@@ -1255,7 +1294,7 @@ public final class PlayerViewModel: ObservableObject {
                 }
             }
             isSavingTrackMetadata = false
-            inspectingTrack = nil
+            endInspectingMetadata()
         }
     }
 
@@ -1347,6 +1386,9 @@ public final class PlayerViewModel: ObservableObject {
                 if let cmp = Self.compareTracks(a, b, using: comp), cmp != .orderedSame {
                     return cmp == .orderedAscending
                 }
+            }
+            if a.releaseDateSortKey != b.releaseDateSortKey {
+                return a.releaseDateSortKey < b.releaseDateSortKey
             }
             if a.albumSortKey != b.albumSortKey {
                 return a.albumSortKey < b.albumSortKey

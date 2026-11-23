@@ -687,13 +687,13 @@ private struct EditHealthIssueSheet: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 80)
 
-                        Text("Year:")
+                        Text("Date:")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.secondary)
 
-                        TextField("Year", text: $health.editYear)
+                        TextField("YYYY-MM-DD", text: $health.editYear)
                             .textFieldStyle(.roundedBorder)
-                            .frame(width: 90)
+                            .frame(width: 104)
                     }
                 }
             }

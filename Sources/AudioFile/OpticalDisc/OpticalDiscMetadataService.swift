@@ -39,6 +39,7 @@ public actor OpticalDiscMetadataService {
         public var title: String = ""
         public var artist: String = ""
         public var year: Int?
+        public var releaseDate: String?
         public var genre: String?
         public var mbid: String?
         public var barcode: String?
@@ -64,6 +65,7 @@ public actor OpticalDiscMetadataService {
             if !mb.title.isEmpty { result.title = mb.title }
             if !mb.artist.isEmpty { result.artist = mb.artist }
             if mb.year != nil { result.year = mb.year }
+            if mb.releaseDate != nil { result.releaseDate = mb.releaseDate }
             if mb.genre != nil { result.genre = mb.genre }
             if mb.mbid != nil { result.mbid = mb.mbid }
             if mb.barcode != nil { result.barcode = mb.barcode }
@@ -166,9 +168,10 @@ public actor OpticalDiscMetadataService {
         result.title = json["title"] as? String ?? ""
         result.barcode = json["barcode"] as? String
 
-        if let dateStr = json["date"] as? String {
-            let yearStr = String(dateStr.prefix(4))
-            result.year = Int(yearStr)
+        if let dateStr = json["date"] as? String,
+           let parsed = ParsedReleaseDate.parse(dateStr) {
+            result.releaseDate = parsed.formattedString
+            result.year = parsed.year
         }
 
         // Artist Credit

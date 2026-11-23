@@ -428,6 +428,7 @@ public final class OpticalDiscManager: ObservableObject {
         if !meta.title.isEmpty { currentDisc.title = meta.title }
         if !meta.artist.isEmpty { currentDisc.artist = meta.artist }
         if meta.year != nil { currentDisc.year = meta.year }
+        if meta.releaseDate != nil { currentDisc.releaseDate = meta.releaseDate }
         if meta.genre != nil { currentDisc.genre = meta.genre }
         if meta.mbid != nil { currentDisc.mbid = meta.mbid }
         if meta.barcode != nil { currentDisc.barcode = meta.barcode }

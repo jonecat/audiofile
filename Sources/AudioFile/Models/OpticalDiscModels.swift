@@ -184,6 +184,7 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
     public var title: String
     public var artist: String
     public var year: Int?
+    public var releaseDate: String?
     public var genre: String?
     public var mbid: String?
     public var barcode: String?
@@ -200,6 +201,7 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         title: String = "Audio CD",
         artist: String = "Unknown Artist",
         year: Int? = nil,
+        releaseDate: String? = nil,
         genre: String? = nil,
         mbid: String? = nil,
         barcode: String? = nil,
@@ -215,6 +217,7 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         self.title = title
         self.artist = artist
         self.year = year
+        self.releaseDate = releaseDate
         self.genre = genre
         self.mbid = mbid
         self.barcode = barcode
@@ -225,6 +228,10 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         self.deviceName = deviceName
         self.isSimulated = isSimulated
         self.accurateripDiscId = accurateripDiscId
+    }
+
+    public var formattedReleaseDate: String? {
+        ParsedReleaseDate.parse(releaseDate, fallbackYear: year)?.formattedString
     }
 
     public var totalDuration: TimeInterval {

@@ -104,6 +104,7 @@ public struct TrackMetadataOverride: Codable, Equatable, Sendable {
     public var trackNumber: Int?
     public var discNumber: Int?
     public var year: Int?
+    public var releaseDate: String? = nil
     public var genre: String?
     public var hasCoverArt: Bool?
 
@@ -115,6 +116,7 @@ public struct TrackMetadataOverride: Codable, Equatable, Sendable {
         trackNumber: Int? = nil,
         discNumber: Int? = nil,
         year: Int? = nil,
+        releaseDate: String? = nil,
         genre: String? = nil,
         hasCoverArt: Bool? = nil
     ) {
@@ -125,6 +127,7 @@ public struct TrackMetadataOverride: Codable, Equatable, Sendable {
         self.trackNumber = trackNumber
         self.discNumber = discNumber
         self.year = year
+        self.releaseDate = releaseDate
         self.genre = genre
         self.hasCoverArt = hasCoverArt
     }
@@ -245,7 +248,17 @@ public final class LibraryHealthManager: ObservableObject {
         if let aa = ov.albumArtist, !aa.isEmpty { track.albumArtist = aa }
         if let tn = ov.trackNumber { track.trackNumber = tn }
         if let dn = ov.discNumber { track.discNumber = dn }
-        if let y = ov.year { track.year = y }
+        if let rd = ov.releaseDate, !rd.isEmpty {
+            track.releaseDate = rd
+            if let parsed = ParsedReleaseDate.parse(rd) {
+                track.year = parsed.year
+            }
+        } else if let y = ov.year {
+            track.year = y
+            if track.parsedReleaseDate?.year != y {
+                track.releaseDate = String(y)
+            }
+        }
         if let g = ov.genre, !g.isEmpty { track.genre = g }
         if let cov = ov.hasCoverArt {
             if cov {
@@ -1384,6 +1397,7 @@ public final class LibraryHealthManager: ObservableObject {
                 if let tn = override.trackNumber { merged.trackNumber = tn }
                 if let dn = override.discNumber { merged.discNumber = dn }
                 if let y = override.year { merged.year = y }
+                if let rd = override.releaseDate, !rd.isEmpty { merged.releaseDate = rd }
                 if let g = override.genre { merged.genre = g }
                 overrides[trackId] = merged
 
@@ -1446,6 +1460,7 @@ public final class LibraryHealthManager: ObservableObject {
         merged.trackNumber = override.trackNumber
         merged.discNumber = override.discNumber
         merged.year = override.year
+        merged.releaseDate = override.releaseDate
         if let g = override.genre { merged.genre = g }
         overrides[track.id] = merged
 
@@ -1477,23 +1492,22 @@ public final class LibraryHealthManager: ObservableObject {
         } else {
             editTrackNumber = ""
         }
-        if let y = ov?.year ?? issue.primaryTrack.year {
-            editYear = String(y)
-        } else {
-            editYear = ""
-        }
+        editYear = ov?.releaseDate ?? issue.primaryTrack.formattedReleaseDate ?? ""
         editingIssue = issue
     }
 
     public func saveEditedIssueAndApprove() {
         guard var issue = editingIssue else { return }
+        let trimmedDate = editYear.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedDate = ParsedReleaseDate.parse(trimmedDate)
         let override = TrackMetadataOverride(
             title: editTitle.trimmingCharacters(in: .whitespacesAndNewlines),
             artist: editArtist.trimmingCharacters(in: .whitespacesAndNewlines),
             album: editAlbum.trimmingCharacters(in: .whitespacesAndNewlines),
             albumArtist: editAlbumArtist.trimmingCharacters(in: .whitespacesAndNewlines),
             trackNumber: Int(editTrackNumber.trimmingCharacters(in: .whitespaces)),
-            year: Int(editYear.trimmingCharacters(in: .whitespaces))
+            year: parsedDate?.year,
+            releaseDate: parsedDate?.formattedString ?? (trimmedDate.isEmpty ? nil : trimmedDate)
         )
         issue.proposedOverride = override
         issue.fixFound = true
@@ -1548,8 +1562,9 @@ public final class LibraryHealthManager: ObservableObject {
         if ov.trackNumber == nil && track.trackNumber == nil {
             ov.trackNumber = best.trackNumber
         }
-        if ov.year == nil && track.year == nil, let rel = best.releaseDate, rel.count >= 4 {
-            ov.year = Int(rel.prefix(4))
+        if ov.year == nil && track.year == nil, let rel = best.releaseDate, let parsed = ParsedReleaseDate.parse(rel) {
+            ov.releaseDate = parsed.formattedString
+            ov.year = parsed.year
         }
         if ov.genre == nil && track.genre == nil {
             ov.genre = best.primaryGenreName
@@ -1557,7 +1572,7 @@ public final class LibraryHealthManager: ObservableObject {
 
         let summary = "Title: \"\(ov.title ?? track.displayTitle)\" • Artist: \(ov.artist ?? track.displayArtist) • Album: \(ov.album ?? track.displayAlbum)"
             + ((ov.trackNumber ?? track.trackNumber).map { " • #\($0)" } ?? "")
-            + ((ov.year ?? track.year).map { " (\($0))" } ?? "")
+            + ((ov.releaseDate ?? track.formattedReleaseDate).map { " (\($0))" } ?? "")
         return (ov, summary)
     }
 
@@ -1617,7 +1632,11 @@ public final class LibraryHealthManager: ObservableObject {
         if let aa = override.albumArtist, !aa.isEmpty { args += ["-metadata", "album_artist=\(aa)"] }
         if let tn = override.trackNumber { args += ["-metadata", "track=\(tn)"] }
         if let dn = override.discNumber { args += ["-metadata", "disc=\(dn)"] }
-        if let y = override.year { args += ["-metadata", "date=\(y)"] }
+        if let rd = override.releaseDate, !rd.isEmpty {
+            args += ["-metadata", "date=\(rd)"]
+        } else if let y = override.year {
+            args += ["-metadata", "date=\(y)"]
+        }
         if let g = override.genre, !g.isEmpty { args += ["-metadata", "genre=\(g)"] }
         args.append(tempURL.path)
 

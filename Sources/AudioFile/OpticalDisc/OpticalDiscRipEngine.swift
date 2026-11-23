@@ -449,8 +449,13 @@ public final class OpticalDiscRipEngine: ObservableObject {
         args.append(contentsOf: ["-metadata", "album_artist=\(disc.artist)"])
         args.append(contentsOf: ["-metadata", "track=\(track.trackNumber)/\(disc.tracks.count)"])
 
+        if let rd = disc.formattedReleaseDate {
+            args.append(contentsOf: ["-metadata", "date=\(rd)"])
+        }
         if let y = disc.year {
-            args.append(contentsOf: ["-metadata", "date=\(y)"])
+            if disc.formattedReleaseDate == nil {
+                args.append(contentsOf: ["-metadata", "date=\(y)"])
+            }
             args.append(contentsOf: ["-metadata", "year=\(y)"])
         }
         if let g = disc.genre, !g.isEmpty {

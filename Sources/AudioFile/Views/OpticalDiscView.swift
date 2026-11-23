@@ -74,8 +74,8 @@ public struct OpticalDiscView: View {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
-                        if let year = disc.year {
-                            Text(String(year))
+                        if let dateStr = disc.formattedReleaseDate {
+                            Text(dateStr)
                             Text("•")
                         }
                         if let genre = disc.genre, !genre.isEmpty {

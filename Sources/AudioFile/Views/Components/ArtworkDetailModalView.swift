@@ -125,8 +125,8 @@ public struct ArtworkDetailModalView: View {
                             )
                     }
 
-                    if let year = track.formattedYear {
-                        Text(year)
+                    if let dateStr = track.formattedReleaseDate {
+                        Text(dateStr)
                             .font(.system(size: 11, weight: .medium, design: .monospaced))
                             .foregroundColor(.secondary)
                             .padding(.horizontal, 8)

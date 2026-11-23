@@ -95,14 +95,15 @@ public struct AlbumsView: View {
                                 }
 
                                 HStack(spacing: 4) {
-                                    if let y = album.year {
-                                        Text(String(y))
+                                    if let dateStr = album.formattedReleaseDate {
+                                        Text(dateStr)
                                         Text("•")
                                     }
                                     Text("\(album.trackCount) songs")
                                 }
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary.opacity(0.8))
+                                .lineLimit(1)
                             }
                         }
                         .contentShape(Rectangle())
@@ -314,8 +315,8 @@ public struct AlbumDetailView: View {
             }
 
             HStack(spacing: 8) {
-                if let y = album.year {
-                    Text(String(y))
+                if let dateStr = album.formattedReleaseDate {
+                    Text(dateStr)
                     Text("•")
                 }
                 Text("\(trackList.count) \(trackList.count == 1 ? "song" : "songs")")

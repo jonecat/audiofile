@@ -32,6 +32,7 @@ public enum CueSheetParser {
         var albumArtist: String?
         var albumGenre: String?
         var albumYear: Int?
+        var albumReleaseDate: String?
         var albumDiscNumber: Int?
         var albumReplayGainDb: Double?
         var albumReplayGainPeak: Double?
@@ -55,7 +56,10 @@ public enum CueSheetParser {
                     if !val.isEmpty { albumGenre = val }
                 } else if remUpper.hasPrefix("DATE ") {
                     let val = unquote(String(remBody.dropFirst(5)))
-                    if let parsedYear = extractYear(from: val) {
+                    if let parsed = ParsedReleaseDate.parse(val) {
+                        albumYear = parsed.year
+                        albumReleaseDate = parsed.formattedString
+                    } else if let parsedYear = extractYear(from: val) {
                         albumYear = parsedYear
                     }
                 } else if remUpper.hasPrefix("DISCNUMBER ") {
@@ -209,7 +213,7 @@ public enum CueSheetParser {
                 albumArtist: albumArtist ?? baseTrack.albumArtist,
                 genre: albumGenre ?? baseTrack.genre,
                 year: albumYear ?? baseTrack.year,
-                releaseDate: baseTrack.releaseDate,
+                releaseDate: albumReleaseDate ?? baseTrack.releaseDate,
                 trackNumber: entry.trackNumber,
                 discNumber: albumDiscNumber ?? baseTrack.discNumber,
                 duration: sliceDuration,

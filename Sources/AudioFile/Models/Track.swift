@@ -1,6 +1,149 @@
 import Foundation
 import CryptoKit
 
+public struct ParsedReleaseDate: Comparable, Hashable, Sendable {
+    public let year: Int
+    public let month: Int?
+    public let day: Int?
+
+    public init(year: Int, month: Int? = nil, day: Int? = nil) {
+        self.year = year
+        self.month = month
+        self.day = day
+    }
+
+    public var specificity: Int {
+        if day != nil { return 3 }
+        if month != nil { return 2 }
+        return 1
+    }
+
+    public var sortKey: Int {
+        year * 10_000 + (month ?? 13) * 100 + (day ?? 32)
+    }
+
+    public var formattedString: String {
+        if let month, let day {
+            return String(format: "%04d-%02d-%02d", year, month, day)
+        } else if let month {
+            return String(format: "%04d-%02d", year, month)
+        } else {
+            return String(format: "%04d", year)
+        }
+    }
+
+    public static func < (lhs: ParsedReleaseDate, rhs: ParsedReleaseDate) -> Bool {
+        lhs.sortKey < rhs.sortKey
+    }
+
+    public static func compare(_ a: ParsedReleaseDate?, _ b: ParsedReleaseDate?) -> ComparisonResult {
+        switch (a, b) {
+        case let (dA?, dB?):
+            if dA.sortKey < dB.sortKey { return .orderedAscending }
+            if dA.sortKey > dB.sortKey { return .orderedDescending }
+            return .orderedSame
+        case (.some, .none):
+            return .orderedAscending
+        case (.none, .some):
+            return .orderedDescending
+        case (.none, .none):
+            return .orderedSame
+        }
+    }
+
+    public static func best(from dates: [ParsedReleaseDate]) -> ParsedReleaseDate? {
+        var best: ParsedReleaseDate? = nil
+        for d in dates {
+            if best == nil || d.specificity > best!.specificity {
+                best = d
+                if d.specificity == 3 {
+                    break
+                }
+            }
+        }
+        return best
+    }
+
+    private static let ymdRegex = try! NSRegularExpression(pattern: #"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?:[T\s].*)?$"#)
+    private static let compactYmdRegex = try! NSRegularExpression(pattern: #"^(\d{4})(\d{2})(\d{2})(?:[T\s].*)?$"#)
+    private static let ymRegex = try! NSRegularExpression(pattern: #"^(\d{4})[-/.](\d{1,2})(?:[T\s].*)?$"#)
+    private static let yearRegex = try! NSRegularExpression(pattern: #"(?:^|\D)(\d{4})(?:\D|$)"#)
+
+    public static func parse(_ raw: String?, fallbackYear: Int? = nil) -> ParsedReleaseDate? {
+        if let raw {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                let candidate: String
+                if let tIdx = trimmed.firstIndex(of: "T") {
+                    candidate = String(trimmed[..<tIdx]).trimmingCharacters(in: .whitespaces)
+                } else if let spaceIdx = trimmed.firstIndex(of: " ") {
+                    let prefix = String(trimmed[..<spaceIdx])
+                    let rest = String(trimmed[trimmed.index(after: spaceIdx)...]).trimmingCharacters(in: .whitespaces)
+                    // Strip trailing time like "1972-02-01 08:00:00" while keeping prose dates like "Jan 12, 1969"
+                    if prefix.count >= 4, prefix.prefix(4).allSatisfy(\.isNumber), !rest.isEmpty, rest.first?.isNumber == true {
+                        candidate = prefix
+                    } else {
+                        candidate = trimmed
+                    }
+                } else {
+                    candidate = trimmed
+                }
+
+                let nsRange = NSRange(candidate.startIndex..., in: candidate)
+
+                // 1. YYYY[-/.]M{1,2}[-/.]D{1,2}
+                if let match = ymdRegex.firstMatch(in: candidate, range: nsRange),
+                   let yRange = Range(match.range(at: 1), in: candidate),
+                   let mRange = Range(match.range(at: 2), in: candidate),
+                   let dRange = Range(match.range(at: 3), in: candidate),
+                   let y = Int(candidate[yRange]), (1000...2999).contains(y),
+                   let rawM = Int(candidate[mRange]),
+                   let rawD = Int(candidate[dRange]) {
+                    let m = (1...12).contains(rawM) ? rawM : nil
+                    let d = (m != nil && (1...31).contains(rawD)) ? rawD : nil
+                    return ParsedReleaseDate(year: y, month: m, day: d)
+                }
+
+                // 2. Exact 8-digit YYYYMMDD
+                if let match = compactYmdRegex.firstMatch(in: candidate, range: nsRange),
+                   let yRange = Range(match.range(at: 1), in: candidate),
+                   let mRange = Range(match.range(at: 2), in: candidate),
+                   let dRange = Range(match.range(at: 3), in: candidate),
+                   let y = Int(candidate[yRange]), (1000...2999).contains(y),
+                   let m = Int(candidate[mRange]), (1...12).contains(m),
+                   let d = Int(candidate[dRange]), (1...31).contains(d) {
+                    return ParsedReleaseDate(year: y, month: m, day: d)
+                }
+
+                // 3. YYYY[-/.]M{1,2}
+                if let match = ymRegex.firstMatch(in: candidate, range: nsRange),
+                   let yRange = Range(match.range(at: 1), in: candidate),
+                   let mRange = Range(match.range(at: 2), in: candidate),
+                   let y = Int(candidate[yRange]), (1000...2999).contains(y),
+                   let rawM = Int(candidate[mRange]) {
+                    let m = (1...12).contains(rawM) ? rawM : nil
+                    return ParsedReleaseDate(year: y, month: m, day: nil)
+                }
+
+                // 4. Any 4-digit year token (1000...2999)
+                let matches = yearRegex.matches(in: candidate, range: nsRange)
+                for match in matches {
+                    if let yRange = Range(match.range(at: 1), in: candidate),
+                       let y = Int(candidate[yRange]),
+                       (1000...2999).contains(y) {
+                        return ParsedReleaseDate(year: y, month: nil, day: nil)
+                    }
+                }
+            }
+        }
+
+        if let fallbackYear, (1000...2999).contains(fallbackYear) {
+            return ParsedReleaseDate(year: fallbackYear, month: nil, day: nil)
+        }
+        return nil
+    }
+}
+
 public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public let id: String
     public let path: URL
@@ -19,8 +162,12 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public var genre: String? {
         didSet { rebuildCachedProperties() }
     }
-    public var year: Int?
-    public var releaseDate: String?
+    public var year: Int? {
+        didSet { rebuildCachedProperties() }
+    }
+    public var releaseDate: String? {
+        didSet { rebuildCachedProperties() }
+    }
     public var trackNumber: Int?
     public var discNumber: Int?
     public var duration: TimeInterval {
@@ -65,6 +212,9 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     public private(set) var formattedSampleRate: String? = nil
     public private(set) var qualityColumnText: String = ""
     public private(set) var isLossless: Bool = false
+    public private(set) var parsedReleaseDate: ParsedReleaseDate? = nil
+    public private(set) var formattedReleaseDate: String? = nil
+    public private(set) var releaseDateSortKey: Int = Int.max
     public private(set) var searchHaystack: String = ""
 
     private enum CodingKeys: String, CodingKey {
@@ -297,7 +447,11 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
             qualityColumnText = ""
         }
 
-        searchHaystack = "\(title)\0\(artist)\0\(album)\0\(genre ?? "")\0\(path.path)".lowercased()
+        parsedReleaseDate = ParsedReleaseDate.parse(releaseDate, fallbackYear: year)
+        formattedReleaseDate = parsedReleaseDate?.formattedString
+        releaseDateSortKey = parsedReleaseDate?.sortKey ?? Int.max
+
+        searchHaystack = "\(title)\0\(artist)\0\(album)\0\(genre ?? "")\0\(formattedReleaseDate ?? "")\0\(path.path)".lowercased()
     }
 
     private static func dsdTierLabel(for rate: Double) -> String? {
@@ -331,7 +485,7 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     }
 
     public var formattedYear: String? {
-        year.map { String($0) }
+        formattedReleaseDate ?? year.map { String($0) }
     }
 
     public var dsdTierLabel: String? {

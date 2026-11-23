@@ -10,6 +10,7 @@ public struct DecodedTrackMetadata: Sendable {
     public var albumArtist: String?
     public var genre: String?
     public var year: Int?
+    public var releaseDate: String?
     public var trackNumber: Int?
     public var discNumber: Int?
     public var duration: TimeInterval = 0
@@ -577,8 +578,7 @@ public enum OpenSourceDecoders {
                 case "album artist", "albumartist": meta.albumArtist = str
                 case "genre": meta.genre = str
                 case "year", "date":
-                    let digits = str.components(separatedBy: CharacterSet.decimalDigits.inverted).first { $0.count == 4 }
-                    if let d = digits, let y = Int(d) { meta.year = y }
+                    mergeParsedDate(raw: str, into: &meta)
                 case "track", "tracknumber":
                     if let first = str.components(separatedBy: "/").first, let n = Int(first) { meta.trackNumber = n }
                 case "disc", "discnumber":
@@ -602,6 +602,10 @@ public enum OpenSourceDecoders {
         let tagSize = synchsafeInt(data, offset: 6)
         let endOffset = min(data.count, 10 + tagSize)
         var pos = 10
+
+        var primaryDate: ParsedReleaseDate? = nil
+        var fallbackDate: ParsedReleaseDate? = nil
+        var id3TDAT: String? = nil
 
         while pos + 10 <= endOffset {
             let frameID = String(data: data[(base + pos)..<(base + pos + 4)], encoding: .ascii) ?? ""
@@ -642,13 +646,40 @@ public enum OpenSourceDecoders {
                            let num = Int(first) {
                             meta.discNumber = num
                         }
-                    case "TYER", "TDRC":
-                        let digits = text.components(separatedBy: CharacterSet.decimalDigits.inverted).first { $0.count == 4 }
-                        if let d = digits, let y = Int(d) { meta.year = y }
+                    case "TYER", "TDRC", "TDRL":
+                        if let parsed = ParsedReleaseDate.parse(text),
+                           primaryDate == nil || parsed.specificity > primaryDate!.specificity {
+                            primaryDate = parsed
+                        }
+                    case "TDOR", "TORY":
+                        if let parsed = ParsedReleaseDate.parse(text),
+                           fallbackDate == nil || parsed.specificity > fallbackDate!.specificity {
+                            fallbackDate = parsed
+                        }
+                    case "TDAT":
+                        id3TDAT = text.trimmingCharacters(in: .whitespacesAndNewlines)
                     default: break
                     }
                 }
             }
+        }
+
+        var bestDate = primaryDate
+        if bestDate == nil {
+            bestDate = fallbackDate
+        } else if let primary = bestDate, primary.specificity == 1,
+                  let fallback = fallbackDate, fallback.specificity > 1, fallback.year == primary.year {
+            bestDate = fallback
+        }
+        if let d = bestDate, d.month == nil,
+           let tdat = id3TDAT, tdat.count == 4, tdat.allSatisfy(\.isNumber),
+           let dd = Int(tdat.prefix(2)), let mm = Int(tdat.suffix(2)),
+           (1...12).contains(mm), (1...31).contains(dd) {
+            bestDate = ParsedReleaseDate(year: d.year, month: mm, day: dd)
+        }
+        if let bestDate {
+            meta.releaseDate = bestDate.formattedString
+            meta.year = bestDate.year
         }
     }
 
@@ -744,8 +775,20 @@ public enum OpenSourceDecoders {
                     if meta.discNumber == nil && k == "disc" {
                         meta.discNumber = Int(val.components(separatedBy: "/").first ?? "")
                     }
+                    if k == "date" || k == "year" || k == "originaldate" {
+                        mergeParsedDate(raw: val, into: &meta)
+                    }
                 }
             }
+        }
+    }
+
+    private static func mergeParsedDate(raw: String, into meta: inout DecodedTrackMetadata) {
+        guard let parsed = ParsedReleaseDate.parse(raw) else { return }
+        let existing = ParsedReleaseDate.parse(meta.releaseDate, fallbackYear: meta.year)
+        if existing == nil || parsed.specificity > existing!.specificity {
+            meta.releaseDate = parsed.formattedString
+            meta.year = parsed.year
         }
     }
 

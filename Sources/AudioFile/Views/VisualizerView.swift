@@ -534,7 +534,7 @@ private struct VisualizerHeaderView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
 
-                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                Text(track.displayAlbum + (track.formattedReleaseDate.map { " (\($0))" } ?? ""))
                     .font(.system(size: max(11, artistSize - 2)))
                     .foregroundColor(.secondary.opacity(0.85))
                     .lineLimit(1)
@@ -603,7 +603,7 @@ private struct VisualizerPortraitHeroHeaderView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
 
-                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                Text(track.displayAlbum + (track.formattedReleaseDate.map { " (\($0))" } ?? ""))
                     .font(.system(size: artworkSize > 340 ? 14 : 13))
                     .foregroundColor(.secondary.opacity(0.85))
                     .lineLimit(1)
@@ -669,7 +669,7 @@ private struct VisualizerSideInfoView: View {
                     .foregroundColor(.secondary)
                     .lineLimit(1)
 
-                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                Text(track.displayAlbum + (track.formattedReleaseDate.map { " (\($0))" } ?? ""))
                     .font(.system(size: artworkSize > 380 ? 15 : 14))
                     .foregroundColor(.secondary.opacity(0.85))
                     .lineLimit(1)
@@ -747,7 +747,7 @@ private struct VisualizerSoloHeroView: View {
                     .lineLimit(1)
                     .frame(maxWidth: max(artworkSize, 360))
 
-                Text(track.displayAlbum + (track.formattedYear.map { " (\($0))" } ?? ""))
+                Text(track.displayAlbum + (track.formattedReleaseDate.map { " (\($0))" } ?? ""))
                     .font(.system(size: albumSize))
                     .foregroundColor(.secondary.opacity(0.85))
                     .lineLimit(1)
