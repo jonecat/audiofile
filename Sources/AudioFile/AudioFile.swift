@@ -55,12 +55,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                         PlayerViewModel.shared.audio.togglePlayPause()
                         return true
                     }
+                case 53: // Escape
+                    if flags.isEmpty && PlayerViewModel.shared.isFullscreenPresented {
+                        PlayerViewModel.shared.dismissFullscreen()
+                        return true
+                    }
                 case 3: // 'F' key (kVK_ANSI_F)
                     if flags.isEmpty || flags == .shift {
                         PlayerViewModel.shared.toggleFavoriteSelectedOrCurrentTrack()
                         return true
                     }
                 default:
+                    if flags.isEmpty && chars == "e" && PlayerViewModel.shared.isFullscreenPresented {
+                        switch PlayerViewModel.shared.fullscreenStageMode {
+                        case .artwork:
+                            PlayerViewModel.shared.cycleFullscreenArtworkEffect()
+                        case .visualizer:
+                            PlayerViewModel.shared.cycleVisualizerMode()
+                        case .lyrics:
+                            break
+                        }
+                        return true
+                    }
                     if (flags.isEmpty || flags == .shift) && chars == "f" {
                         PlayerViewModel.shared.toggleFavoriteSelectedOrCurrentTrack()
                         return true
@@ -230,6 +246,24 @@ struct AudioFileApp: App {
                     vm.selectedSection = .visualizer
                 }
                 .keyboardShortcut("5", modifiers: .command)
+
+                Button(vm.isFullscreenPresented && vm.fullscreenStageMode == .artwork ? "Exit Full-Screen Artwork" : "Full-Screen Artwork") {
+                    vm.toggleFullscreen(.artwork)
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(vm.audio.currentTrack == nil && !vm.isFullscreenPresented)
+
+                Button(vm.isFullscreenPresented && vm.fullscreenStageMode == .visualizer ? "Exit Full-Screen Visualizer" : "Full-Screen Visualizer") {
+                    vm.toggleFullscreen(.visualizer)
+                }
+                .keyboardShortcut("v", modifiers: [.command, .shift])
+                .disabled(vm.audio.currentTrack == nil && !vm.isFullscreenPresented)
+
+                Button(vm.isFullscreenPresented && vm.fullscreenStageMode == .lyrics ? "Exit Full-Screen Lyrics" : "Full-Screen Lyrics") {
+                    vm.toggleFullscreen(.lyrics)
+                }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(vm.audio.currentTrack == nil && !vm.isFullscreenPresented)
 
                 Button("Favorites") {
                     vm.selectedSection = .favorites

@@ -211,6 +211,7 @@ public actor DynamicRangeEngine {
 
     /// Fast, non-blocking check for stored result (checks persistent database and track metadata)
     public func cachedResult(for track: Track) -> DynamicRangeResult? {
+        guard !track.isOpticalDiscTrack else { return nil }
         reloadDatabaseIfNeeded()
 
         // 1. Direct lookup by track ID
@@ -248,6 +249,7 @@ public actor DynamicRangeEngine {
     /// Measures or returns the stored Dynamic Range score.
     /// If already stored and forceRecalculate is false, immediately returns stored result without re-processing!
     public func dynamicRange(for track: Track, forceRecalculate: Bool = false) async -> DynamicRangeResult? {
+        guard !track.isOpticalDiscTrack else { return nil }
         reloadDatabaseIfNeeded()
 
         let trackKey = track.id

@@ -146,9 +146,11 @@ public struct TrackMenuItems: View {
             vm.beginInspectingMetadata(for: track)
         }
 
-        Button("Measure Dynamic Range") {
-            Task {
-                _ = await DynamicRangeEngine.shared.dynamicRange(for: track, forceRecalculate: true)
+        if !track.isOpticalDiscTrack {
+            Button("Measure Dynamic Range") {
+                Task {
+                    _ = await DynamicRangeEngine.shared.dynamicRange(for: track, forceRecalculate: true)
+                }
             }
         }
 
@@ -208,11 +210,13 @@ public struct TrackMenuItems: View {
 
         Divider()
 
-        Button("Measure Dynamic Range (\(count) Songs)") {
-            let resolved = resolveTracks()
-            Task {
-                for t in resolved {
-                    _ = await DynamicRangeEngine.shared.dynamicRange(for: t, forceRecalculate: true)
+        let measurableTracks = resolveTracks().filter { !$0.isOpticalDiscTrack }
+        if !measurableTracks.isEmpty {
+            Button("Measure Dynamic Range (\(measurableTracks.count) Songs)") {
+                Task {
+                    for t in measurableTracks {
+                        _ = await DynamicRangeEngine.shared.dynamicRange(for: t, forceRecalculate: true)
+                    }
                 }
             }
         }

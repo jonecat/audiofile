@@ -52,7 +52,8 @@ public struct OpticalDiscRipSheet: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Rip Audio CD")
                         .font(.title2.weight(.bold))
-                    Text("\(disc.title) • \(disc.artist) (\(disc.tracks.count) tracks)")
+                    let discPart = disc.discBadgeText.map { "\($0) • " } ?? ""
+                    Text("\(disc.title) • \(discPart)\(disc.artist) (\(disc.tracks.count) tracks)")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
@@ -123,7 +124,8 @@ public struct OpticalDiscRipSheet: View {
                             Text("Standard Folder Structure:")
                                 .font(.caption2.weight(.semibold))
                                 .foregroundStyle(.secondary)
-                            let previewPath = "\(OpticalDiscRipEngine.sanitizePathSegment(disc.artist)) / \(OpticalDiscRipEngine.sanitizePathSegment(disc.title)) / 01 - \(OpticalDiscRipEngine.sanitizePathSegment(disc.tracks.first?.title ?? "Song")).\(opticalManager.ripFormat.fileExtension)"
+                            let discFolderPart = disc.isMultiDisc ? "Disc \(disc.discNumber ?? 1) / " : ""
+                            let previewPath = "\(OpticalDiscRipEngine.sanitizePathSegment(disc.artist)) / \(OpticalDiscRipEngine.sanitizePathSegment(disc.title)) / \(discFolderPart)01 - \(OpticalDiscRipEngine.sanitizePathSegment(disc.tracks.first?.title ?? "Song")).\(opticalManager.ripFormat.fileExtension)"
                             Text(previewPath)
                                 .font(.system(size: 11, design: .monospaced))
                                 .foregroundStyle(Color.accentColor)

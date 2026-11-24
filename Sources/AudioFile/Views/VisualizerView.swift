@@ -26,9 +26,6 @@ public struct VisualizerView: View {
                         .ignoresSafeArea()
                 }
             }
-            .sheet(item: $vm.inspectingArtworkTrack) { track in
-                ArtworkDetailModalView(vm: vm, track: track)
-            }
             .animation(.easeInOut(duration: 0.25), value: vm.showTrackInfo)
             .animation(.easeInOut(duration: 0.25), value: vm.showLyrics)
             .animation(.easeInOut(duration: 0.25), value: vm.showVisualizer)
@@ -110,6 +107,10 @@ public struct VisualizerView: View {
 
                     LyricsCardView.scaleSlider(scale: $vm.lyricsScale)
 
+                    LyricsCardView.fullscreenButton {
+                        vm.presentFullscreen(.lyrics)
+                    }
+
                     VisualizerTogglesBar(vm: vm)
                         .padding(.leading, 6)
                 }
@@ -171,7 +172,8 @@ public struct VisualizerView: View {
                 scale: $vm.lyricsScale,
                 isExpanded: true,
                 showHeader: true,
-                onSeek: { vm.audio.seek(to: $0) }
+                onSeek: { vm.audio.seek(to: $0) },
+                onFullscreen: { vm.presentFullscreen(.lyrics) }
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 24)
@@ -209,7 +211,8 @@ public struct VisualizerView: View {
                 scale: $vm.lyricsScale,
                 isExpanded: isTallPortrait,
                 showHeader: true,
-                onSeek: { vm.audio.seek(to: $0) }
+                onSeek: { vm.audio.seek(to: $0) },
+                onFullscreen: { vm.presentFullscreen(.lyrics) }
             )
             .frame(maxHeight: isTallPortrait ? h * 0.34 : nil)
             .padding(.horizontal, 24)
@@ -268,6 +271,10 @@ public struct VisualizerView: View {
 
                 LyricsCardView.scaleSlider(scale: $vm.lyricsScale)
 
+                LyricsCardView.fullscreenButton {
+                    vm.presentFullscreen(.lyrics)
+                }
+
                 VisualizerTogglesBar(vm: vm)
                     .padding(.leading, 4)
             }
@@ -304,6 +311,10 @@ public struct VisualizerView: View {
                 Spacer()
 
                 LyricsCardView.scaleSlider(scale: $vm.lyricsScale)
+
+                LyricsCardView.fullscreenButton {
+                    vm.presentFullscreen(.lyrics)
+                }
 
                 VisualizerTogglesBar(vm: vm)
                     .padding(.leading, 4)
@@ -503,7 +514,7 @@ private struct VisualizerHeaderView: View {
     var body: some View {
         HStack(alignment: .top, spacing: 18) {
             Button {
-                vm.inspectingArtworkTrack = track
+                vm.presentFullscreen(.artwork)
             } label: {
                 ZStack(alignment: .bottomTrailing) {
                     ArtworkView(track: track, cornerRadius: artworkSize > 160 ? 14 : 10, shadowRadius: artworkSize > 160 ? 10 : 6, maxPixelSize: artworkSize > 200 ? nil : 320)
@@ -522,7 +533,7 @@ private struct VisualizerHeaderView: View {
                 )
             }
             .buttonStyle(.plain)
-            .help("Click to view full album artwork")
+            .help("Click to view full-screen artwork")
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(track.displayTitle)
@@ -540,8 +551,10 @@ private struct VisualizerHeaderView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
-                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    if !track.isOpticalDiscTrack {
+                        DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                            vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                        }
                     }
 
                     FormatBadgeView(format: track.format, isLossless: track.isLossless)
@@ -571,7 +584,7 @@ private struct VisualizerPortraitHeroHeaderView: View {
 
         VStack(spacing: 12) {
             Button {
-                vm.inspectingArtworkTrack = track
+                vm.presentFullscreen(.artwork)
             } label: {
                 ZStack(alignment: .bottomTrailing) {
                     ArtworkView(track: track, cornerRadius: cornerRad, shadowRadius: 16, maxPixelSize: nil)
@@ -590,7 +603,7 @@ private struct VisualizerPortraitHeroHeaderView: View {
                 )
             }
             .buttonStyle(.plain)
-            .help("Click to view full album artwork")
+            .help("Click to view full-screen artwork")
 
             VStack(spacing: 4) {
                 Text(track.displayTitle)
@@ -609,8 +622,10 @@ private struct VisualizerPortraitHeroHeaderView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
-                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    if !track.isOpticalDiscTrack {
+                        DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                            vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                        }
                     }
 
                     FormatBadgeView(format: track.format, isLossless: track.isLossless)
@@ -638,7 +653,7 @@ private struct VisualizerSideInfoView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button {
-                vm.inspectingArtworkTrack = track
+                vm.presentFullscreen(.artwork)
             } label: {
                 ZStack(alignment: .bottomTrailing) {
                     ArtworkView(track: track, cornerRadius: artworkSize > 360 ? 18 : 16, shadowRadius: artworkSize > 360 ? 16 : 12, maxPixelSize: artworkSize > 200 ? nil : 320)
@@ -657,7 +672,7 @@ private struct VisualizerSideInfoView: View {
                 )
             }
             .buttonStyle(.plain)
-            .help("Click to view full album artwork")
+            .help("Click to view full-screen artwork")
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(track.displayTitle)
@@ -675,8 +690,10 @@ private struct VisualizerSideInfoView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
-                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
-                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    if !track.isOpticalDiscTrack {
+                        DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                            vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                        }
                     }
 
                     FormatBadgeView(format: track.format, isLossless: track.isLossless)
@@ -713,7 +730,7 @@ private struct VisualizerSoloHeroView: View {
             Spacer(minLength: 10)
 
             Button {
-                vm.inspectingArtworkTrack = track
+                vm.presentFullscreen(.artwork)
             } label: {
                 ZStack(alignment: .bottomTrailing) {
                     ArtworkView(track: track, cornerRadius: cornerRad, shadowRadius: artworkSize > 450 ? 24 : 16, maxPixelSize: artworkSize > 200 ? nil : 320)
@@ -732,7 +749,7 @@ private struct VisualizerSoloHeroView: View {
                 )
             }
             .buttonStyle(.plain)
-            .help("Click to view full album artwork")
+            .help("Click to view full-screen artwork")
 
             VStack(spacing: 5) {
                 Text(track.displayTitle)
@@ -754,8 +771,10 @@ private struct VisualizerSoloHeroView: View {
                     .frame(maxWidth: max(artworkSize, 360))
 
                 HStack(spacing: 8) {
-                    DynamicRangeBadgeView(state: vm.currentDynamicRange) {
-                        vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                    if !track.isOpticalDiscTrack {
+                        DynamicRangeBadgeView(state: vm.currentDynamicRange) {
+                            vm.calculateDynamicRange(for: track, forceRecalculate: true)
+                        }
                     }
 
                     FormatBadgeView(format: track.format, isLossless: track.isLossless)
@@ -811,6 +830,19 @@ private struct VisualizerCardContainer: View {
                 .help("Switch visualizer mode (click visualization to cycle)")
 
                 Spacer()
+
+                Button {
+                    vm.presentFullscreen(.visualizer)
+                } label: {
+                    Image(systemName: "arrow.up.left.and.arrow.down.right")
+                        .font(.system(size: 10.5, weight: .bold))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 24)
+                        .contentShape(Circle())
+                        .glassEffect(.regular.interactive(), in: .circle)
+                }
+                .buttonStyle(.plain)
+                .help("Open Visualizer Full Screen")
             }
 
             ZStack {

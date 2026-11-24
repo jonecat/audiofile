@@ -20,13 +20,15 @@ echo "Building AudioFile v${VERSION} (release)..."
 swift build -c release
 
 APP_NAME="AudioFile.app"
-APP_DIR="${ROOT_DIR}/${APP_NAME}"
-CONTENTS_DIR="${APP_DIR}/Contents"
+STAGE_DIR="$(mktemp -d /tmp/audiofile-build.XXXXXX)"
+trap 'rm -rf "${STAGE_DIR}"' EXIT
+
+STAGE_APP_DIR="${STAGE_DIR}/${APP_NAME}"
+CONTENTS_DIR="${STAGE_APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
-echo "Creating bundle structure at ${APP_DIR}..."
-rm -rf "${APP_DIR}"
+echo "Creating bundle structure at ${STAGE_APP_DIR}..."
 mkdir -p "${MACOS_DIR}"
 mkdir -p "${RESOURCES_DIR}"
 
@@ -42,23 +44,25 @@ if [ -f "${ROOT_DIR}/Resources/AppIcon.icns" ]; then
 fi
 
 echo "Signing application ad-hoc..."
-xattr -rc "${APP_DIR}" 2>/dev/null || true
-xattr -d com.apple.FinderInfo "${APP_DIR}" 2>/dev/null || true
-dot_clean "${APP_DIR}" 2>/dev/null || true
-codesign --force --deep --sign - "${APP_DIR}"
+xattr -cr "${STAGE_APP_DIR}" 2>/dev/null || true
+dot_clean "${STAGE_APP_DIR}" 2>/dev/null || true
+codesign --force --deep --sign - "${STAGE_APP_DIR}"
+codesign --verify --deep --strict "${STAGE_APP_DIR}"
 
 echo "Packaging release archive AudioFile.app.zip..."
-rm -f "${ROOT_DIR}/AudioFile.app.zip"
-ditto -c -k --sequesterRsrc --keepParent "${APP_DIR}" "${ROOT_DIR}/AudioFile.app.zip"
+ditto -c -k --sequesterRsrc --keepParent "${STAGE_APP_DIR}" "${STAGE_DIR}/AudioFile.app.zip"
 
 echo "Packaging disk image AudioFile.dmg..."
-rm -f "${ROOT_DIR}/AudioFile.dmg"
-DMG_STAGING="${ROOT_DIR}/.build/dmg_staging"
-rm -rf "${DMG_STAGING}"
+DMG_STAGING="${STAGE_DIR}/dmg_staging"
 mkdir -p "${DMG_STAGING}"
-cp -R "${APP_DIR}" "${DMG_STAGING}/AudioFile.app"
+ditto "${STAGE_APP_DIR}" "${DMG_STAGING}/AudioFile.app"
 ln -s /Applications "${DMG_STAGING}/Applications"
-hdiutil create -volname "AudioFile" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${ROOT_DIR}/AudioFile.dmg" >/dev/null
-rm -rf "${DMG_STAGING}"
+hdiutil create -volname "AudioFile" -srcfolder "${DMG_STAGING}" -ov -format UDZO "${STAGE_DIR}/AudioFile.dmg" >/dev/null
 
-echo "Done! Application ready at: ${APP_DIR}, AudioFile.app.zip, and AudioFile.dmg (v${VERSION})"
+echo "Syncing build artifacts to workspace..."
+rm -rf "${ROOT_DIR}/${APP_NAME}" "${ROOT_DIR}/AudioFile.app.zip" "${ROOT_DIR}/AudioFile.dmg"
+ditto "${STAGE_APP_DIR}" "${ROOT_DIR}/${APP_NAME}"
+mv -f "${STAGE_DIR}/AudioFile.app.zip" "${ROOT_DIR}/AudioFile.app.zip"
+mv -f "${STAGE_DIR}/AudioFile.dmg" "${ROOT_DIR}/AudioFile.dmg"
+
+echo "Done! Application ready at: ${ROOT_DIR}/${APP_NAME}, AudioFile.app.zip, and AudioFile.dmg (v${VERSION})"

@@ -66,6 +66,15 @@ public struct OpticalDiscView: View {
                         Text(disc.title.isEmpty ? "Audio CD" : disc.title)
                             .font(.system(size: 24, weight: .bold))
                             .lineLimit(1)
+
+                        if let badge = disc.discBadgeText {
+                            Text(badge)
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(Color.accentColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color.accentColor.opacity(0.14)))
+                        }
                     }
 
                     Text(disc.artist.isEmpty ? "Unknown Artist" : disc.artist)
@@ -74,6 +83,10 @@ public struct OpticalDiscView: View {
                         .lineLimit(1)
 
                     HStack(spacing: 6) {
+                        if let subtitle = disc.discSubtitle, !subtitle.isEmpty {
+                            Text(subtitle)
+                            Text("•")
+                        }
                         if let dateStr = disc.formattedReleaseDate {
                             Text(dateStr)
                             Text("•")

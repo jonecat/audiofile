@@ -7,6 +7,7 @@ public struct LyricsCardView: View {
     public let isExpanded: Bool
     public let showHeader: Bool
     public var onSeek: ((TimeInterval) -> Void)? = nil
+    public var onFullscreen: (() -> Void)? = nil
 
     public init(
         status: LyricsStatus,
@@ -14,7 +15,8 @@ public struct LyricsCardView: View {
         scale: Binding<Double>,
         isExpanded: Bool = false,
         showHeader: Bool = true,
-        onSeek: ((TimeInterval) -> Void)? = nil
+        onSeek: ((TimeInterval) -> Void)? = nil,
+        onFullscreen: (() -> Void)? = nil
     ) {
         self.status = status
         self.window = window
@@ -22,6 +24,7 @@ public struct LyricsCardView: View {
         self.isExpanded = isExpanded
         self.showHeader = showHeader
         self.onSeek = onSeek
+        self.onFullscreen = onFullscreen
     }
 
     private var cgScale: CGFloat {
@@ -44,6 +47,10 @@ public struct LyricsCardView: View {
 
                     // Text Size Slider
                     Self.scaleSlider(scale: $scale)
+
+                    if let onFullscreen {
+                        Self.fullscreenButton(action: onFullscreen)
+                    }
                 }
             }
 
@@ -77,6 +84,23 @@ public struct LyricsCardView: View {
                 .foregroundStyle(.secondary)
         }
         .help("Adjust lyrics text and card size")
+    }
+
+    @ViewBuilder
+    public static func fullscreenButton(
+        helpText: String = "Open Lyrics Full Screen",
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 10.5, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 24, height: 24)
+                .contentShape(Circle())
+                .glassEffect(.regular.interactive(), in: .circle)
+        }
+        .buttonStyle(.plain)
+        .help(helpText)
     }
 
     // MARK: - Compact 5-Line Presentation (When Visualizer is Active)

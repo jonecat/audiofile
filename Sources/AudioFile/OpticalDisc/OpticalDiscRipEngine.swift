@@ -93,39 +93,51 @@ public final class OpticalDiscRipEngine: ObservableObject {
         verifyWithAccurateRip: Bool,
         onTrackStateChanged: @escaping @MainActor (Int, RipTrackState) -> Void
     ) async -> Bool {
-        // Standard directory structure: <Selected Folder> / <Artist> / <Album>
+        // Standard directory structure: <Selected Folder> / <Artist> / <Album> [/ Disc N]
         let safeArtist = Self.sanitizePathSegment(disc.artist.isEmpty ? "Unknown Artist" : disc.artist)
         let safeAlbum = Self.sanitizePathSegment(disc.title.isEmpty ? "Unknown Album" : disc.title)
 
         let albumDir = destinationFolder
             .appendingPathComponent(safeArtist, isDirectory: true)
             .appendingPathComponent(safeAlbum, isDirectory: true)
+        let outputDir = disc.isMultiDisc
+            ? albumDir.appendingPathComponent("Disc \(disc.discNumber ?? 1)", isDirectory: true)
+            : albumDir
 
         do {
-            try FileManager.default.createDirectory(at: albumDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(at: outputDir, withIntermediateDirectories: true)
         } catch {
             await MainActor.run {
-                self.currentStatusMessage = "Failed to create directory: \(albumDir.path)"
+                self.currentStatusMessage = "Failed to create directory: \(outputDir.path)"
             }
             return false
         }
 
-        // Save cover.jpg if artwork is available
+        // Save cover.jpg if artwork is available (in album root and disc subfolder when multi-disc)
         var savedCoverURL: URL? = nil
         if let artData = disc.artworkData, !artData.isEmpty {
-            let coverURL = albumDir.appendingPathComponent("cover.jpg")
-            try? artData.write(to: coverURL)
-            savedCoverURL = coverURL
+            let rootCoverURL = albumDir.appendingPathComponent("cover.jpg")
+            try? artData.write(to: rootCoverURL)
+            if outputDir != albumDir {
+                let discCoverURL = outputDir.appendingPathComponent("cover.jpg")
+                try? artData.write(to: discCoverURL)
+                savedCoverURL = discCoverURL
+            } else {
+                savedCoverURL = rootCoverURL
+            }
         }
 
         // Initialize Whipper / EAC style Rip Log
         var logLines: [String] = []
         logLines.append("AudioFile AccurateRip Log - \(Date().formatted())")
         logLines.append("Album: \(disc.title)")
+        if let badge = disc.discBadgeText {
+            logLines.append("Disc: \(badge)")
+        }
         logLines.append("Artist: \(disc.artist)")
         logLines.append("Drive: \(disc.deviceName)")
         logLines.append("Format: \(format.displayName)")
-        logLines.append("Destination: \(albumDir.path)")
+        logLines.append("Destination: \(outputDir.path)")
         logLines.append("--------------------------------------------------")
 
         var allTrackCRCs: [UInt32] = []
@@ -146,7 +158,7 @@ public final class OpticalDiscRipEngine: ObservableObject {
             // Standard file structure: <Track Number> - <Song Title>.<ext>
             let safeTrackTitle = Self.sanitizePathSegment(track.title.isEmpty ? "Track \(trackNum)" : track.title)
             let filename = String(format: "%02d - %@.%@", trackNum, safeTrackTitle, format.fileExtension)
-            let outputTrackURL = albumDir.appendingPathComponent(filename)
+            let outputTrackURL = outputDir.appendingPathComponent(filename)
 
             // Step 1: Read audio sectors & compute Pass 1 CRC32 + AccurateRip Checksums
             var pass1Result: (pcmData: Data, crc32: UInt32, accurateRipCRC: UInt32)?
@@ -265,8 +277,8 @@ public final class OpticalDiscRipEngine: ObservableObject {
         logLines.append("--------------------------------------------------")
         logLines.append("Rip finished: \(Date().formatted())")
 
-        // Write rip.log into album folder
-        let logURL = albumDir.appendingPathComponent("rip.log")
+        // Write rip.log into disc destination folder
+        let logURL = outputDir.appendingPathComponent("rip.log")
         let logText = logLines.joined(separator: "\n")
         try? logText.write(to: logURL, atomically: true, encoding: .utf8)
 
@@ -448,6 +460,17 @@ public final class OpticalDiscRipEngine: ObservableObject {
         args.append(contentsOf: ["-metadata", "album=\(disc.title)"])
         args.append(contentsOf: ["-metadata", "album_artist=\(disc.artist)"])
         args.append(contentsOf: ["-metadata", "track=\(track.trackNumber)/\(disc.tracks.count)"])
+
+        if let discNum = disc.discNumber {
+            if let totalDiscs = disc.totalDiscs, totalDiscs > 1 {
+                args.append(contentsOf: ["-metadata", "disc=\(discNum)/\(totalDiscs)"])
+            } else if discNum > 1 {
+                args.append(contentsOf: ["-metadata", "disc=\(discNum)"])
+            }
+        }
+        if let subtitle = disc.discSubtitle, !subtitle.isEmpty {
+            args.append(contentsOf: ["-metadata", "discsubtitle=\(subtitle)"])
+        }
 
         if let rd = disc.formattedReleaseDate {
             args.append(contentsOf: ["-metadata", "date=\(rd)"])

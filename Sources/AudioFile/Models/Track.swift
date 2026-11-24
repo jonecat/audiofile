@@ -200,6 +200,10 @@ public struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
         startTimeOffset != nil
     }
 
+    public var isOpticalDiscTrack: Bool {
+        id.hasPrefix("optical_") || format.uppercased() == "CDDA"
+    }
+
     // Precomputed display, formatting, and sort keys (not persisted)
     public private(set) var displayTitle: String = ""
     public private(set) var displayArtist: String = ""

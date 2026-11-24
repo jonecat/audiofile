@@ -1,6 +1,22 @@
 import Foundation
 import Accelerate
 
+public struct AudioEnergy: Sendable {
+    public let bass: Float
+    public let mid: Float
+    public let treble: Float
+    public let overall: Float
+
+    public static let zero = AudioEnergy(bass: 0, mid: 0, treble: 0, overall: 0)
+
+    public init(bass: Float, mid: Float, treble: Float, overall: Float) {
+        self.bass = bass
+        self.mid = mid
+        self.treble = treble
+        self.overall = overall
+    }
+}
+
 public struct VisualizerFrame: Sendable {
     public let bands: [Float]
     public let peaks: [Float]
@@ -134,6 +150,27 @@ public final class VisualizerEngine: @unchecked Sendable {
     public func getBands() -> (bands: [Float], peaks: [Float]) {
         let frame = getFrame(for: .bars)
         return (frame.bands, frame.peaks)
+    }
+
+    public func getAudioEnergy() -> AudioEnergy {
+        lock.lock()
+        defer { lock.unlock() }
+
+        computeFFT()
+
+        func average(_ range: Range<Int>) -> Float {
+            let clamped = range.clamped(to: 0..<bandValues.count)
+            guard !clamped.isEmpty else { return 0 }
+            var sum: Float = 0
+            for idx in clamped { sum += bandValues[idx] }
+            return min(max(sum / Float(clamped.count), 0), 1)
+        }
+
+        let bass = average(0..<8)
+        let mid = average(8..<28)
+        let treble = average(28..<54)
+        let overall = min(max(bass * 0.5 + mid * 0.35 + treble * 0.15, 0), 1)
+        return AudioEnergy(bass: bass, mid: mid, treble: treble, overall: overall)
     }
 
     public func getFrame(for mode: VisualizerMode = .bars) -> VisualizerFrame {

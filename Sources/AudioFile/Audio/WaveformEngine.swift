@@ -48,6 +48,10 @@ public actor WaveformEngine {
     }
 
     public func waveform(for track: Track) async -> WaveformData {
+        if track.isOpticalDiscTrack {
+            return WaveformData.fastEstimate(for: track.path, duration: track.duration)
+        }
+
         let key = cacheKey(for: track.path)
 
         // 1. Check memory cache

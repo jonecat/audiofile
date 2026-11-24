@@ -143,6 +143,14 @@ public final class PlayerViewModel: ObservableObject {
             visualizer.setMode(visualizerMode)
         }
     }
+    @Published public var fullscreenArtworkEffect: FullscreenArtworkEffect = .audioAura {
+        didSet {
+            config.fullscreenArtworkEffect = fullscreenArtworkEffect
+            config.save()
+        }
+    }
+    @Published public var isFullscreenPresented: Bool = false
+    @Published public var fullscreenStageMode: FullscreenStageMode = .artwork
     @Published public var lyricsScale: Double = 1.0 {
         didSet {
             config.lyricsScale = lyricsScale
@@ -205,7 +213,6 @@ public final class PlayerViewModel: ObservableObject {
 
     // Track Metadata Inspector & Editor state
     @Published public var inspectingTrack: Track?
-    @Published public var inspectingArtworkTrack: Track?
     @Published public var inspectedTrackTagReport: FullTrackTagReport? = nil
     @Published public var isLoadingInspectedTags: Bool = false
     @Published public var metaTagFilterQuery: String = ""
@@ -261,6 +268,7 @@ public final class PlayerViewModel: ObservableObject {
         self.showTrackInfo = config.showTrackInfo
         self.visualizerMode = config.visualizerMode
         self.visualizer.setMode(config.visualizerMode)
+        self.fullscreenArtworkEffect = config.fullscreenArtworkEffect
         self.lyricsScale = config.lyricsScale
         self.audio.volume = config.volume
         self.audio.applyAudioConfig(config)
@@ -335,11 +343,16 @@ public final class PlayerViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Visualizer timer lifecycle: run only when playing AND viewing Visualizer with panel visible
-        Publishers.CombineLatest3(audio.$state, $selectedSection, $showVisualizer)
+        // Visualizer timer lifecycle: run only when playing AND viewing Visualizer with panel visible (paused during full-screen presentation)
+        Publishers.CombineLatest4(audio.$state, $selectedSection, $showVisualizer, $isFullscreenPresented)
             .receive(on: RunLoop.main)
-            .sink { [weak self] state, section, showVis in
-                self?.updateVisualizerTimerState(state: state, section: section, showVisualizer: showVis)
+            .sink { [weak self] state, section, showVis, isFullscreen in
+                self?.updateVisualizerTimerState(
+                    state: state,
+                    section: section,
+                    showVisualizer: showVis,
+                    isFullscreen: isFullscreen
+                )
             }
             .store(in: &cancellables)
 
@@ -373,7 +386,13 @@ public final class PlayerViewModel: ObservableObject {
                             self.currentWaveform = wf
                         }
                     }
-                    self.calculateDynamicRange(for: t)
+                    if t.isOpticalDiscTrack {
+                        self.currentDynamicRange = .idle
+                        self.dynamicRangeTask?.cancel()
+                        self.dynamicRangeTask = nil
+                    } else {
+                        self.calculateDynamicRange(for: t)
+                    }
                 } else {
                     self.currentWaveform = nil
                     self.currentDynamicRange = .idle
@@ -418,6 +437,13 @@ public final class PlayerViewModel: ObservableObject {
     // MARK: - Dynamic Range Measurement
 
     public func calculateDynamicRange(for track: Track, forceRecalculate: Bool = false) {
+        if track.isOpticalDiscTrack {
+            dynamicRangeTask?.cancel()
+            dynamicRangeTask = nil
+            currentDynamicRange = .idle
+            return
+        }
+
         dynamicRangeTask?.cancel()
 
         dynamicRangeTask = Task {
@@ -459,17 +485,49 @@ public final class PlayerViewModel: ObservableObject {
     public func updateVisualizerTimerState(
         state: PlaybackState? = nil,
         section: NavigationSection? = nil,
-        showVisualizer: Bool? = nil
+        showVisualizer: Bool? = nil,
+        isFullscreen: Bool? = nil
     ) {
         let effectiveState = state ?? audio.state
         let effectiveSection = section ?? selectedSection
         let effectiveShow = showVisualizer ?? self.showVisualizer
+        let effectiveFullscreen = isFullscreen ?? self.isFullscreenPresented
 
-        if effectiveState == .playing && effectiveSection == .visualizer && effectiveShow {
+        if !effectiveFullscreen && effectiveState == .playing && effectiveSection == .visualizer && effectiveShow {
             visualizer.start(fps: config.visualizerFPS)
         } else {
             visualizer.stop(resetFrame: effectiveState == .stopped || !effectiveShow)
         }
+    }
+
+    // MARK: - Full-Screen Presentation
+
+    public func presentFullscreen(_ mode: FullscreenStageMode = .artwork) {
+        guard audio.currentTrack != nil else { return }
+        fullscreenStageMode = mode
+        isFullscreenPresented = true
+        FullscreenArtworkWindowController.shared.present(vm: self)
+    }
+
+    public func dismissFullscreen() {
+        isFullscreenPresented = false
+        FullscreenArtworkWindowController.shared.dismiss()
+    }
+
+    public func toggleFullscreen(_ mode: FullscreenStageMode = .artwork) {
+        if isFullscreenPresented {
+            if fullscreenStageMode == mode {
+                dismissFullscreen()
+            } else {
+                fullscreenStageMode = mode
+            }
+        } else {
+            presentFullscreen(mode)
+        }
+    }
+
+    public func cycleFullscreenArtworkEffect() {
+        fullscreenArtworkEffect = fullscreenArtworkEffect.next
     }
 
     // MARK: - Queue & Playback

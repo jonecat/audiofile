@@ -301,8 +301,10 @@ private struct PlayerBarTrackInfoView: View {
 
                     ViewThatFits(in: .horizontal) {
                         HStack(spacing: 6) {
-                            DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
-                                vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                            if !t.isOpticalDiscTrack {
+                                DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
+                                    vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                                }
                             }
                             FormatBadgeView(format: t.format, isLossless: t.isLossless)
                             if let shortQuality = t.shortQualityDescription {
@@ -314,8 +316,10 @@ private struct PlayerBarTrackInfoView: View {
                         }
 
                         HStack(spacing: 6) {
-                            DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
-                                vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                            if !t.isOpticalDiscTrack {
+                                DynamicRangeBadgeView(state: vm.currentDynamicRange, compact: true) {
+                                    vm.calculateDynamicRange(for: t, forceRecalculate: true)
+                                }
                             }
                             FormatBadgeView(format: t.format, isLossless: t.isLossless)
                         }

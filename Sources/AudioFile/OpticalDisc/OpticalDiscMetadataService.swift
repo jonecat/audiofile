@@ -41,6 +41,9 @@ public actor OpticalDiscMetadataService {
         public var year: Int?
         public var releaseDate: String?
         public var genre: String?
+        public var discNumber: Int?
+        public var totalDiscs: Int?
+        public var discSubtitle: String?
         public var mbid: String?
         public var barcode: String?
         public var artworkURL: URL?
@@ -52,6 +55,7 @@ public actor OpticalDiscMetadataService {
     /// Fetches metadata and high-resolution album artwork for an optical disc.
     public func fetchMetadata(
         discID: String,
+        firstTrack: Int = 1,
         trackOffsets: [Int],
         leadoutSector: Int,
         fallbackTitle: String? = nil,
@@ -59,14 +63,22 @@ public actor OpticalDiscMetadataService {
     ) async -> DiscMetadataResult {
         var result = DiscMetadataResult()
 
-        // 1. Query MusicBrainz by DiscID
-        let mbResult = await queryMusicBrainz(discID: discID, trackOffsets: trackOffsets, leadoutSector: leadoutSector)
+        // 1. Query MusicBrainz by DiscID (with multi-disc medium matching & TOC fallback)
+        let mbResult = await queryMusicBrainz(
+            discID: discID,
+            firstTrack: firstTrack,
+            trackOffsets: trackOffsets,
+            leadoutSector: leadoutSector
+        )
         if let mb = mbResult {
             if !mb.title.isEmpty { result.title = mb.title }
             if !mb.artist.isEmpty { result.artist = mb.artist }
             if mb.year != nil { result.year = mb.year }
             if mb.releaseDate != nil { result.releaseDate = mb.releaseDate }
             if mb.genre != nil { result.genre = mb.genre }
+            if mb.discNumber != nil { result.discNumber = mb.discNumber }
+            if mb.totalDiscs != nil { result.totalDiscs = mb.totalDiscs }
+            if mb.discSubtitle != nil { result.discSubtitle = mb.discSubtitle }
             if mb.mbid != nil { result.mbid = mb.mbid }
             if mb.barcode != nil { result.barcode = mb.barcode }
             for (num, title) in mb.trackTitles {
@@ -108,100 +120,350 @@ public actor OpticalDiscMetadataService {
 
     private func queryMusicBrainz(
         discID: String,
+        firstTrack: Int,
         trackOffsets: [Int],
         leadoutSector: Int
     ) async -> DiscMetadataResult? {
-        // Step 1: Query exact MusicBrainz DiscID
-        var releaseID: String? = nil
-        let discIDURL = "https://musicbrainz.org/ws/2/discid/\(discID)?fmt=json"
-        releaseID = await fetchReleaseID(urlString: discIDURL)
+        var bestResult: DiscMetadataResult? = nil
+        var didMakeRequest = false
 
-        // Step 2: Fallback to fuzzy TOC query if exact DiscID did not match
-        if releaseID == nil && !trackOffsets.isEmpty {
-            var tocParts = ["1", "\(trackOffsets.count)", "\(leadoutSector)"]
+        // Step 1: Single-request exact MusicBrainz DiscID lookup with full includes
+        let discIDURL = "https://musicbrainz.org/ws/2/discid/\(discID)?inc=artist-credits+recordings+release-groups+genres&fmt=json"
+        didMakeRequest = true
+        if let json = await performMusicBrainzJSONRequest(urlString: discIDURL),
+           let releases = json["releases"] as? [[String: Any]],
+           !releases.isEmpty {
+            bestResult = Self.parseBestMetadata(
+                fromReleases: releases,
+                discID: discID,
+                trackOffsets: trackOffsets,
+                leadoutSector: leadoutSector
+            )
+        }
+
+        // Step 2: Rate-limited fuzzy TOC fallback if exact DiscID did not match any usable release
+        if bestResult == nil && !trackOffsets.isEmpty {
+            if didMakeRequest {
+                try? await Task.sleep(nanoseconds: 1_100_000_000)
+            }
+            let effectiveFirstTrack = max(1, firstTrack)
+            let lastTrack = effectiveFirstTrack + trackOffsets.count - 1
+            var tocParts = ["\(effectiveFirstTrack)", "\(lastTrack)", "\(leadoutSector)"]
             for off in trackOffsets { tocParts.append("\(off)") }
             let tocString = tocParts.joined(separator: "+")
-            let fuzzyURL = "https://musicbrainz.org/ws/2/discid/-?toc=\(tocString)&fmt=json"
-            releaseID = await fetchReleaseID(urlString: fuzzyURL)
+            let fuzzyURL = "https://musicbrainz.org/ws/2/discid/-?toc=\(tocString)&inc=artist-credits+recordings+release-groups+genres&fmt=json"
+            didMakeRequest = true
+            if let json = await performMusicBrainzJSONRequest(urlString: fuzzyURL),
+               let releases = json["releases"] as? [[String: Any]],
+               !releases.isEmpty {
+                bestResult = Self.parseBestMetadata(
+                    fromReleases: releases,
+                    discID: discID,
+                    trackOffsets: trackOffsets,
+                    leadoutSector: leadoutSector
+                )
+            }
         }
 
-        guard let relID = releaseID else { return nil }
-
-        // Step 3: Fetch full release details with recordings, track titles, artist, genres
-        let releaseURL = "https://musicbrainz.org/ws/2/release/\(relID)?inc=artist-credits+recordings+genres&fmt=json"
-        return await fetchReleaseDetails(urlString: releaseURL)
-    }
-
-    private func fetchReleaseID(urlString: String) async -> String? {
-        guard let url = URL(string: urlString) else { return nil }
-        var req = URLRequest(url: url)
-        req.timeoutInterval = 8.0
-        req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
-
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let releases = json["releases"] as? [[String: Any]],
-              let firstRelease = releases.first,
-              let relID = firstRelease["id"] as? String else {
-            return nil
+        // Step 3: Safety net — fetch full release if tracklist was omitted
+        if let current = bestResult,
+           current.trackTitles.isEmpty,
+           let mbid = current.mbid,
+           !mbid.isEmpty {
+            if didMakeRequest {
+                try? await Task.sleep(nanoseconds: 1_100_000_000)
+            }
+            let releaseURL = "https://musicbrainz.org/ws/2/release/\(mbid)?inc=artist-credits+recordings+release-groups+genres+discids&fmt=json"
+            if let releaseJSON = await performMusicBrainzJSONRequest(urlString: releaseURL),
+               let detailed = Self.parseBestMetadata(
+                   fromReleases: [releaseJSON],
+                   discID: discID,
+                   trackOffsets: trackOffsets,
+                   leadoutSector: leadoutSector
+               ) {
+                bestResult = detailed
+            }
         }
-        return relID
+
+        return bestResult
     }
 
-    private func fetchReleaseDetails(urlString: String) async -> DiscMetadataResult? {
+    private func performMusicBrainzJSONRequest(urlString: String) async -> [String: Any]? {
         guard let url = URL(string: urlString) else { return nil }
         var req = URLRequest(url: url)
         req.timeoutInterval = 10.0
         req.setValue(userAgent, forHTTPHeaderField: "User-Agent")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
 
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
-              let http = resp as? HTTPURLResponse, http.statusCode == 200,
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+        for attempt in 0..<2 {
+            guard let (data, resp) = try? await URLSession.shared.data(for: req),
+                  let http = resp as? HTTPURLResponse else {
+                return nil
+            }
+            if http.statusCode == 200 {
+                return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            }
+            if (http.statusCode == 503 || http.statusCode == 429), attempt == 0 {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                continue
+            }
             return nil
         }
+        return nil
+    }
 
-        var result = DiscMetadataResult()
-        result.mbid = json["id"] as? String
-        result.title = json["title"] as? String ?? ""
-        result.barcode = json["barcode"] as? String
+    // MARK: - Release & Medium Matching
 
-        if let dateStr = json["date"] as? String,
-           let parsed = ParsedReleaseDate.parse(dateStr) {
-            result.releaseDate = parsed.formattedString
-            result.year = parsed.year
-        }
+    /// Scores every `(release, medium)` candidate across MusicBrainz results so multi-disc editions
+    /// resolve to the exact matching disc instead of blindly picking Disc 1 (`media.first`).
+    public static func parseBestMetadata(
+        fromReleases releases: [[String: Any]],
+        discID: String,
+        trackOffsets: [Int],
+        leadoutSector: Int
+    ) -> DiscMetadataResult? {
+        let expectedDurationsMs = expectedDurationsMilliseconds(trackOffsets: trackOffsets, leadoutSector: leadoutSector)
 
-        // Artist Credit
-        if let artistCredits = json["artist-credit"] as? [[String: Any]], let first = artistCredits.first {
-            result.artist = first["name"] as? String ?? ""
-        }
+        var bestCandidate: (release: [String: Any], medium: [String: Any], mediumIdx: Int, totalDiscs: Int, score: Int)? = nil
 
-        // Genres
-        if let genres = json["genres"] as? [[String: Any]], let firstG = genres.first {
-            result.genre = firstG["name"] as? String
-        }
-
-        // Media & Tracklist
-        if let mediaList = json["media"] as? [[String: Any]], let firstMedia = mediaList.first,
-           let tracks = firstMedia["tracks"] as? [[String: Any]] {
-            for trackObj in tracks {
-                let position = trackObj["position"] as? Int ?? ((trackObj["number"] as? String).flatMap { Int($0) } ?? 0)
-                let title = trackObj["title"] as? String ?? ""
-                if position > 0 && !title.isEmpty {
-                    result.trackTitles[position] = title
+        for release in releases {
+            guard let mediaList = release["media"] as? [[String: Any]], !mediaList.isEmpty else {
+                continue
+            }
+            for (idx, medium) in mediaList.enumerated() {
+                let candidateScore = scoreCandidate(
+                    release: release,
+                    medium: medium,
+                    discID: discID,
+                    trackOffsets: trackOffsets,
+                    leadoutSector: leadoutSector,
+                    expectedDurationsMs: expectedDurationsMs
+                )
+                if bestCandidate == nil || candidateScore > bestCandidate!.score {
+                    bestCandidate = (release, medium, idx, mediaList.count, candidateScore)
                 }
-                if let artistCredits = trackObj["artist-credit"] as? [[String: Any]], let firstAC = artistCredits.first {
-                    if let trackArtist = firstAC["name"] as? String {
-                        result.trackArtists[position] = trackArtist
+            }
+        }
+
+        guard let winner = bestCandidate else { return nil }
+        return extractResult(
+            from: winner.release,
+            medium: winner.medium,
+            mediumIndex: winner.mediumIdx,
+            totalDiscs: winner.totalDiscs
+        )
+    }
+
+    private static func expectedDurationsMilliseconds(trackOffsets: [Int], leadoutSector: Int) -> [Double] {
+        guard !trackOffsets.isEmpty else { return [] }
+        return (0..<trackOffsets.count).map { i in
+            let nextSector = (i + 1 < trackOffsets.count) ? trackOffsets[i + 1] : leadoutSector
+            guard nextSector > trackOffsets[i] else { return 0 }
+            return Double(nextSector - trackOffsets[i]) / 75.0 * 1000.0
+        }
+    }
+
+    private static func scoreCandidate(
+        release: [String: Any],
+        medium: [String: Any],
+        discID: String,
+        trackOffsets: [Int],
+        leadoutSector: Int,
+        expectedDurationsMs: [Double]
+    ) -> Int {
+        var score = 0
+        let expectedTrackCount = trackOffsets.count
+        let tracks = (medium["tracks"] as? [[String: Any]]) ?? []
+        let mediumTrackCount = (medium["track-count"] as? Int) ?? tracks.count
+        let discs = (medium["discs"] as? [[String: Any]]) ?? []
+
+        // 1. Exact MusicBrainz DiscID match on this medium
+        if discs.contains(where: { ($0["id"] as? String) == discID }) {
+            score += 1_000_000
+        }
+
+        // 2. Track count match / mismatch penalty
+        if expectedTrackCount > 0 {
+            if mediumTrackCount == expectedTrackCount {
+                score += 100_000
+                if tracks.count == expectedTrackCount {
+                    score += 20_000
+                }
+            } else {
+                score -= 500_000 + abs(mediumTrackCount - expectedTrackCount) * 10_000
+            }
+
+            // 3. TOC offset & leadout proximity across attached discs
+            var minSectorDelta: Int? = nil
+            for d in discs {
+                guard let mbOffsets = d["offsets"] as? [Int], mbOffsets.count == expectedTrackCount else {
+                    continue
+                }
+                var delta = zip(mbOffsets, trackOffsets).reduce(0) { $0 + abs($1.0 - $1.1) }
+                if leadoutSector > 0, let mbSectors = d["sectors"] as? Int, mbSectors > 0 {
+                    delta += abs(mbSectors - leadoutSector)
+                }
+                if minSectorDelta == nil || delta < minSectorDelta! {
+                    minSectorDelta = delta
+                }
+            }
+            if let sectorDelta = minSectorDelta {
+                score += max(0, 60_000 - min(60_000, sectorDelta))
+            }
+
+            // 4. Per-track duration proximity
+            if tracks.count == expectedTrackCount, expectedDurationsMs.count == expectedTrackCount {
+                let sortedTracks = tracks.enumerated().sorted { a, b in
+                    trackPosition(a.element, fallbackIndex: a.offset) < trackPosition(b.element, fallbackIndex: b.offset)
+                }.map(\.element)
+
+                var totalDeltaMs = 0.0
+                var comparedCount = 0
+                for i in 0..<expectedTrackCount {
+                    let expectedMs = expectedDurationsMs[i]
+                    guard expectedMs > 0,
+                          let mbLen = (sortedTracks[i]["length"] as? NSNumber)?.doubleValue else {
+                        continue
+                    }
+                    totalDeltaMs += abs(mbLen - expectedMs)
+                    comparedCount += 1
+                }
+                if comparedCount > 0 {
+                    let meanDeltaMs = totalDeltaMs / Double(comparedCount)
+                    if meanDeltaMs <= 3000.0 {
+                        score += Int(40_000.0 - min(40_000.0, meanDeltaMs * 10.0))
+                    } else {
+                        score -= min(100_000, Int(meanDeltaMs))
                     }
                 }
             }
         }
 
+        // 5. Release / medium quality tie-breakers
+        if let status = release["status"] as? String {
+            switch status {
+            case "Official": score += 500
+            case "Bootleg": score -= 200
+            case "Promotion": score -= 100
+            default: break
+            }
+        }
+        if let format = medium["format"] as? String, format.uppercased().contains("CD") {
+            score += 100
+        }
+        if !tracks.isEmpty {
+            score += 200
+        }
+        if let date = release["date"] as? String, !date.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            score += 100
+        }
+        if let barcode = release["barcode"] as? String, !barcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            score += 25
+        }
+        if let country = release["country"] as? String {
+            if country == "US" {
+                score += 30
+            } else if country == "XW" || country == "XE" {
+                score += 20
+            }
+        }
+
+        return score
+    }
+
+    private static func extractResult(
+        from release: [String: Any],
+        medium: [String: Any],
+        mediumIndex: Int,
+        totalDiscs: Int
+    ) -> DiscMetadataResult {
+        var result = DiscMetadataResult()
+        result.mbid = release["id"] as? String
+        result.title = (release["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        result.barcode = release["barcode"] as? String
+
+        if let dateStr = release["date"] as? String,
+           let parsed = ParsedReleaseDate.parse(dateStr) {
+            result.releaseDate = parsed.formattedString
+            result.year = parsed.year
+        }
+
+        if let artist = formatArtistCredit(release["artist-credit"] as? [[String: Any]]) {
+            result.artist = artist
+        }
+
+        result.genre = extractTopGenre(from: release)
+
+        result.discNumber = (medium["position"] as? Int) ?? (mediumIndex + 1)
+        result.totalDiscs = totalDiscs
+        if let sub = (medium["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !sub.isEmpty {
+            result.discSubtitle = sub
+        }
+
+        if let tracks = medium["tracks"] as? [[String: Any]] {
+            for (idx, trackObj) in tracks.enumerated() {
+                let position = trackPosition(trackObj, fallbackIndex: idx)
+                guard position > 0 else { continue }
+
+                let recording = trackObj["recording"] as? [String: Any]
+                let title = ((trackObj["title"] as? String) ?? (recording?["title"] as? String) ?? "")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if !title.isEmpty {
+                    result.trackTitles[position] = title
+                }
+
+                let trackArtist = formatArtistCredit(trackObj["artist-credit"] as? [[String: Any]])
+                    ?? formatArtistCredit(recording?["artist-credit"] as? [[String: Any]])
+                if let trackArtist, !trackArtist.isEmpty {
+                    result.trackArtists[position] = trackArtist
+                }
+            }
+        }
+
         return result
+    }
+
+    private static func trackPosition(_ trackObj: [String: Any], fallbackIndex: Int) -> Int {
+        if let pos = trackObj["position"] as? Int, pos > 0 {
+            return pos
+        }
+        if let numStr = trackObj["number"] as? String, let num = Int(numStr), num > 0 {
+            return num
+        }
+        return fallbackIndex + 1
+    }
+
+    private static func formatArtistCredit(_ credits: [[String: Any]]?) -> String? {
+        guard let credits, !credits.isEmpty else { return nil }
+        var combined = ""
+        for entry in credits {
+            let name = (entry["name"] as? String)
+                ?? ((entry["artist"] as? [String: Any])?["name"] as? String)
+                ?? ""
+            let join = (entry["joinphrase"] as? String) ?? ""
+            combined += name + join
+        }
+        let trimmed = combined.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    private static func extractTopGenre(from release: [String: Any]) -> String? {
+        let releaseGenres = release["genres"] as? [[String: Any]]
+        let rgGenres = (release["release-group"] as? [String: Any])?["genres"] as? [[String: Any]]
+        let genres = (releaseGenres?.isEmpty == false) ? releaseGenres : rgGenres
+        guard let genres, !genres.isEmpty else { return nil }
+
+        let ranked = genres.compactMap { entry -> (name: String, count: Int)? in
+            guard let name = (entry["name"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                  !name.isEmpty else {
+                return nil
+            }
+            let count = (entry["count"] as? Int) ?? 0
+            return (name, count)
+        }.sorted { $0.count > $1.count }
+
+        return ranked.first?.name
     }
 
     // MARK: - High-Resolution Artwork Fetchers

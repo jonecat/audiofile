@@ -54,7 +54,9 @@ public struct SidebarView: View {
                     if let disc = opticalManager.detectedDisc {
                         NavigationLink(value: NavigationSection.opticalDisc) {
                             HStack {
-                                Label(disc.title.isEmpty ? "Audio CD" : disc.title, systemImage: "opticaldisc")
+                                let baseTitle = disc.title.isEmpty ? "Audio CD" : disc.title
+                                let sidebarTitle = disc.isMultiDisc ? "\(baseTitle) (Disc \(disc.discNumber ?? 1))" : baseTitle
+                                Label(sidebarTitle, systemImage: "opticaldisc")
                                 Spacer()
                                 Text("\(disc.tracks.count)")
                                     .font(.system(size: 11, design: .monospaced))

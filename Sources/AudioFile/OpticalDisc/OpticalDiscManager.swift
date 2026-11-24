@@ -330,11 +330,20 @@ public final class OpticalDiscManager: ObservableObject {
                     parsedFirstTrack = firstSession["First Track"] as? Int ?? 1
                     parsedLastTrack = firstSession["Last Track"] as? Int ?? audioTrackFiles.count
                     parsedLeadout = firstSession["Leadout Block"] as? Int ?? 0
-                    let trackArray = (firstSession["Track Array"] as? [[String: Any]]) ?? []
-                    for t in trackArray {
+                    let rawTrackArray = (firstSession["Track Array"] as? [[String: Any]]) ?? []
+                    let audioEntries = rawTrackArray
+                        .filter { ($0["Data"] as? Bool) != true }
+                        .sorted { ($0["Point"] as? Int ?? Int.max) < ($1["Point"] as? Int ?? Int.max) }
+                    for t in audioEntries {
                         if let start = t["Start Block"] as? Int {
                             trackOffsets.append(start)
                         }
+                    }
+                    if let firstPt = audioEntries.first?["Point"] as? Int, firstPt > 0 {
+                        parsedFirstTrack = firstPt
+                    }
+                    if let lastPt = audioEntries.last?["Point"] as? Int, lastPt >= parsedFirstTrack {
+                        parsedLastTrack = lastPt
                     }
                 }
 
@@ -385,7 +394,9 @@ public final class OpticalDiscManager: ObservableObject {
                     tracks: opticalTracks,
                     volumeURL: volumeURL,
                     deviceName: driveName,
-                    isSimulated: false
+                    isSimulated: false,
+                    firstTrack: parsedFirstTrack,
+                    leadoutSector: leadout
                 )
 
                 return ParsedDiscPayload(disc: newDisc, trackOffsets: trackOffsets, leadout: leadout)
@@ -404,10 +415,13 @@ public final class OpticalDiscManager: ObservableObject {
         self.statusMessage = "Fetching album metadata & artwork from MusicBrainz…"
 
         let offsets = trackOffsets.isEmpty ? disc.tracks.map { $0.sectorStart } : trackOffsets
-        let leadout = leadoutSector == 0 ? ((offsets.last ?? 0) + (disc.tracks.last?.sectorCount ?? 15000)) : leadoutSector
+        let leadout = leadoutSector > 0
+            ? leadoutSector
+            : (disc.leadoutSector > 0 ? disc.leadoutSector : ((offsets.last ?? 0) + (disc.tracks.last?.sectorCount ?? 15000)))
 
         let meta = await OpticalDiscMetadataService.shared.fetchMetadata(
             discID: disc.id,
+            firstTrack: disc.firstTrack,
             trackOffsets: offsets,
             leadoutSector: leadout,
             fallbackTitle: disc.title,
@@ -430,6 +444,9 @@ public final class OpticalDiscManager: ObservableObject {
         if meta.year != nil { currentDisc.year = meta.year }
         if meta.releaseDate != nil { currentDisc.releaseDate = meta.releaseDate }
         if meta.genre != nil { currentDisc.genre = meta.genre }
+        if meta.discNumber != nil { currentDisc.discNumber = meta.discNumber }
+        if meta.totalDiscs != nil { currentDisc.totalDiscs = meta.totalDiscs }
+        if meta.discSubtitle != nil { currentDisc.discSubtitle = meta.discSubtitle }
         if meta.mbid != nil { currentDisc.mbid = meta.mbid }
         if meta.barcode != nil { currentDisc.barcode = meta.barcode }
         if meta.artworkData != nil { currentDisc.artworkData = meta.artworkData }
@@ -450,7 +467,11 @@ public final class OpticalDiscManager: ObservableObject {
 
         self.detectedDisc = currentDisc
         self.isScanning = false
-        self.statusMessage = "Loaded: \(currentDisc.artist) - \(currentDisc.title)"
+        if let badge = currentDisc.discBadgeText {
+            self.statusMessage = "Loaded: \(currentDisc.artist) - \(currentDisc.title) (\(badge))"
+        } else {
+            self.statusMessage = "Loaded: \(currentDisc.artist) - \(currentDisc.title)"
+        }
     }
 
     // MARK: - Disc Playback & Track Conversion
@@ -460,14 +481,19 @@ public final class OpticalDiscManager: ObservableObject {
         let disc = detectedDisc
         let albumTitle = disc?.title.isEmpty == false ? disc!.title : "Audio CD"
         let artistName = opticalTrack.artist.isEmpty ? (disc?.artist ?? "Unknown Artist") : opticalTrack.artist
+        let discScope = disc?.id ?? "cd"
 
         return Track(
-            id: "optical_\(opticalTrack.id)",
+            id: "optical_\(discScope)_\(opticalTrack.trackNumber)",
             path: opticalTrack.sourceURL,
             title: opticalTrack.title,
             artist: artistName,
             album: albumTitle,
+            genre: disc?.genre,
+            year: disc?.year,
+            releaseDate: disc?.releaseDate,
             trackNumber: opticalTrack.trackNumber,
+            discNumber: disc?.discNumber,
             duration: opticalTrack.duration,
             format: "CDDA",
             sampleRate: 44100,

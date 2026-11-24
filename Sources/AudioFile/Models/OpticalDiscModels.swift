@@ -186,6 +186,9 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
     public var year: Int?
     public var releaseDate: String?
     public var genre: String?
+    public var discNumber: Int?
+    public var totalDiscs: Int?
+    public var discSubtitle: String?
     public var mbid: String?
     public var barcode: String?
     public var artworkURL: URL?
@@ -195,6 +198,8 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
     public var deviceName: String
     public var isSimulated: Bool
     public var accurateripDiscId: String?
+    public var firstTrack: Int
+    public var leadoutSector: Int
 
     public init(
         id: String,
@@ -203,6 +208,9 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         year: Int? = nil,
         releaseDate: String? = nil,
         genre: String? = nil,
+        discNumber: Int? = nil,
+        totalDiscs: Int? = nil,
+        discSubtitle: String? = nil,
         mbid: String? = nil,
         barcode: String? = nil,
         artworkURL: URL? = nil,
@@ -211,7 +219,9 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         volumeURL: URL? = nil,
         deviceName: String = "Optical Drive",
         isSimulated: Bool = false,
-        accurateripDiscId: String? = nil
+        accurateripDiscId: String? = nil,
+        firstTrack: Int = 1,
+        leadoutSector: Int = 0
     ) {
         self.id = id
         self.title = title
@@ -219,6 +229,9 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         self.year = year
         self.releaseDate = releaseDate
         self.genre = genre
+        self.discNumber = discNumber
+        self.totalDiscs = totalDiscs
+        self.discSubtitle = discSubtitle
         self.mbid = mbid
         self.barcode = barcode
         self.artworkURL = artworkURL
@@ -228,6 +241,20 @@ public struct OpticalDisc: Identifiable, Equatable, Sendable {
         self.deviceName = deviceName
         self.isSimulated = isSimulated
         self.accurateripDiscId = accurateripDiscId
+        self.firstTrack = firstTrack
+        self.leadoutSector = leadoutSector
+    }
+
+    public var isMultiDisc: Bool {
+        (totalDiscs ?? 1) > 1 || (discNumber ?? 1) > 1
+    }
+
+    public var discBadgeText: String? {
+        guard isMultiDisc, let num = discNumber else { return nil }
+        if let total = totalDiscs, total > 1 {
+            return "Disc \(num) of \(total)"
+        }
+        return "Disc \(num)"
     }
 
     public var formattedReleaseDate: String? {

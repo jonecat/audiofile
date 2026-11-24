@@ -45,6 +45,53 @@ public enum VisualizerMode: String, Codable, CaseIterable, Identifiable, Sendabl
     }
 }
 
+public enum FullscreenStageMode: String, CaseIterable, Identifiable, Sendable {
+    case artwork = "Artwork"
+    case visualizer = "Visualizer"
+    case lyrics = "Lyrics"
+
+    public var id: String { rawValue }
+
+    public var systemImage: String {
+        switch self {
+        case .artwork: return "photo"
+        case .visualizer: return "waveform"
+        case .lyrics: return "quote.bubble"
+        }
+    }
+}
+
+public enum FullscreenArtworkEffect: String, Codable, CaseIterable, Identifiable, Sendable {
+    case audioAura = "Audio Aura"
+    case vinylSpin = "Turntable"
+    case minimal = "Pure"
+
+    public var id: String { rawValue }
+
+    public var systemImage: String {
+        switch self {
+        case .audioAura: return "sparkles"
+        case .vinylSpin: return "record.circle"
+        case .minimal: return "square"
+        }
+    }
+
+    public var subtitle: String {
+        switch self {
+        case .audioAura: return "3D floating plane with live bass-reactive halo"
+        case .vinylSpin: return "Spinning vinyl record with artwork center label"
+        case .minimal: return "Clean gallery still with ambient backdrop"
+        }
+    }
+
+    public var next: FullscreenArtworkEffect {
+        let all = Self.allCases
+        guard let idx = all.firstIndex(of: self) else { return .audioAura }
+        let nextIdx = (idx + 1) % all.count
+        return all[nextIdx]
+    }
+}
+
 public enum ReplayGainMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case off = "Off"
     case track = "Track Gain"
@@ -88,6 +135,7 @@ public struct AppConfig: Codable, Sendable {
     public var shuffle: Bool
     public var visualizerFPS: Int
     public var visualizerMode: VisualizerMode
+    public var fullscreenArtworkEffect: FullscreenArtworkEffect
     public var showLyrics: Bool
     public var showVisualizer: Bool
     public var showTrackInfo: Bool
@@ -123,6 +171,7 @@ public struct AppConfig: Codable, Sendable {
         shuffle: Bool = false,
         visualizerFPS: Int = 60,
         visualizerMode: VisualizerMode = .bars,
+        fullscreenArtworkEffect: FullscreenArtworkEffect = .audioAura,
         showLyrics: Bool = true,
         showVisualizer: Bool = true,
         showTrackInfo: Bool = true,
@@ -148,6 +197,7 @@ public struct AppConfig: Codable, Sendable {
         self.shuffle = shuffle
         self.visualizerFPS = visualizerFPS
         self.visualizerMode = visualizerMode
+        self.fullscreenArtworkEffect = fullscreenArtworkEffect
         self.showLyrics = showLyrics
         self.showVisualizer = showVisualizer
         self.showTrackInfo = showTrackInfo
@@ -176,6 +226,7 @@ public struct AppConfig: Codable, Sendable {
         self.shuffle = try container.decodeIfPresent(Bool.self, forKey: .shuffle) ?? false
         self.visualizerFPS = try container.decodeIfPresent(Int.self, forKey: .visualizerFPS) ?? 60
         self.visualizerMode = (try? container.decodeIfPresent(VisualizerMode.self, forKey: .visualizerMode)) ?? .bars
+        self.fullscreenArtworkEffect = (try? container.decodeIfPresent(FullscreenArtworkEffect.self, forKey: .fullscreenArtworkEffect)) ?? .audioAura
         self.showLyrics = try container.decodeIfPresent(Bool.self, forKey: .showLyrics) ?? true
         self.showVisualizer = try container.decodeIfPresent(Bool.self, forKey: .showVisualizer) ?? true
         self.showTrackInfo = try container.decodeIfPresent(Bool.self, forKey: .showTrackInfo) ?? true
