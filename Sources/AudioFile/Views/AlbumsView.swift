@@ -288,9 +288,7 @@ public struct AlbumDetailView: View {
 
                         albumTracklistSection(
                             trackList: trackList,
-                            showQualityText: tracklistWidth >= 540,
-                            showPlaysAndDR: tracklistWidth >= 420,
-                            showFormatBadge: tracklistWidth >= 360
+                            showPlays: tracklistWidth >= 320
                         )
                     }
                     .padding(.horizontal, 24)
@@ -318,9 +316,7 @@ public struct AlbumDetailView: View {
 
                         albumTracklistSection(
                             trackList: trackList,
-                            showQualityText: w >= 580,
-                            showPlaysAndDR: w >= 480,
-                            showFormatBadge: w >= 380
+                            showPlays: w >= 380
                         )
                     }
                     .padding(.horizontal, 20)
@@ -354,9 +350,7 @@ public struct AlbumDetailView: View {
 
                         albumTracklistSection(
                             trackList: trackList,
-                            showQualityText: tracklistWidth >= 460,
-                            showPlaysAndDR: tracklistWidth >= 360,
-                            showFormatBadge: tracklistWidth >= 380
+                            showPlays: tracklistWidth >= 300
                         )
                     }
                     .padding(.horizontal, 28)
@@ -453,9 +447,7 @@ public struct AlbumDetailView: View {
     @ViewBuilder
     private func albumTracklistSection(
         trackList: [Track],
-        showQualityText: Bool,
-        showPlaysAndDR: Bool,
-        showFormatBadge: Bool
+        showPlays: Bool
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
@@ -506,47 +498,37 @@ public struct AlbumDetailView: View {
                             )
                     }
                     .buttonStyle(.plain)
+                    .frame(width: 16, alignment: .center)
                     .help(vm.playlists.isFavorite(trackId: track.id) ? "Remove from Favorites" : "Add to Favorites")
 
                     Text(track.displayTitle)
                         .font(.system(size: 13, weight: isPlaying ? .semibold : .regular))
                         .foregroundStyle(isSelected ? Color.white : (isPlaying ? Color.accentColor : Color.primary))
                         .lineLimit(1)
-                        .layoutPriority(1)
+                        .truncationMode(.tail)
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
-                    Spacer(minLength: 4)
-
-                    if showPlaysAndDR {
+                    if showPlays {
                         let plays = track.playCount ?? 0
                         HStack(spacing: 3) {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 7))
                             Text("\(plays)")
                                 .font(.system(size: 11, design: .monospaced))
+                                .lineLimit(1)
                         }
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : (plays > 0 ? Color.secondary : Color.secondary.opacity(0.35)))
-                        .frame(minWidth: 28, alignment: .trailing)
-
-                        if let score = track.dynamicRange {
-                            DynamicRangeBadgeView(score: score, compact: true, isHighlighted: isSelected)
-                        }
-                    }
-
-                    if showFormatBadge {
-                        FormatBadgeView(format: track.format, isLossless: track.isLossless, isHighlighted: isSelected)
-                    }
-
-                    if showQualityText && !track.qualityColumnText.isEmpty {
-                        Text(track.qualityColumnText)
-                            .font(.system(size: 11, design: .monospaced))
-                            .foregroundStyle(isSelected ? Color.white.opacity(0.8) : Color.secondary)
-                            .lineLimit(1)
+                        .frame(width: 40, alignment: .trailing)
+                        .fixedSize()
+                        .layoutPriority(1)
                     }
 
                     Text(track.formattedDuration)
                         .font(.system(size: 12, design: .monospaced))
                         .foregroundStyle(isSelected ? Color.white.opacity(0.85) : Color.secondary)
-                        .frame(width: 44, alignment: .trailing)
+                        .frame(width: 48, alignment: .trailing)
+                        .fixedSize()
+                        .layoutPriority(1)
 
                     TrackKebabMenuButton(
                         vm: vm,
