@@ -1401,7 +1401,7 @@ public struct FullscreenArtworkView: View {
                                 vm.previousTrack()
                                 viewState.revealHUD()
                             } label: {
-                                Image(systemName: "backward.fill")
+                                Image(systemName: "backward.end.fill")
                                     .font(.system(size: 13))
                                     .foregroundStyle(.white)
                                     .frame(width: 34, height: 34)
@@ -1430,7 +1430,7 @@ public struct FullscreenArtworkView: View {
                                 vm.nextTrack()
                                 viewState.revealHUD()
                             } label: {
-                                Image(systemName: "forward.fill")
+                                Image(systemName: "forward.end.fill")
                                     .font(.system(size: 13))
                                     .foregroundStyle(.white)
                                     .frame(width: 34, height: 34)
