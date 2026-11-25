@@ -213,7 +213,7 @@ public struct PlayerBarView: View {
                     } label: {
                         Image(systemName: "list.bullet")
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(vm.upcomingQueueItems.isEmpty ? Color.primary.opacity(0.85) : Color.accentColor)
+                            .foregroundStyle(Color.primary.opacity(0.85))
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
